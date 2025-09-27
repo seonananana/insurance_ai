@@ -1,3 +1,5 @@
+#정규식/JSONL로 각 조항 저장
+
 import re, json
 from pathlib import Path
 
