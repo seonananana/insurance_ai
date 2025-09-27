@@ -1,3 +1,6 @@
+#PyMuPDF(pdfplumber)로 본문 텍스트 추출
+#표지/목차/빈 줄 제거
+
 import fitz
 from pathlib import Path
 
