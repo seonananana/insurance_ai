@@ -11,6 +11,7 @@ import psycopg
 from psycopg_pool import AsyncConnectionPool
 
 from app.routers import qa, health
+from dotenv import load_dotenv
 
 app = FastAPI(title="Claims Assistant API", version="0.1.0")
 
@@ -21,6 +22,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/claims")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
