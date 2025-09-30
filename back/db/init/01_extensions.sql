@@ -1,1 +1,4 @@
-
+CREATE EXTENSION IF NOT EXISTS vector;
+-- 선택: 필요하면 같이 켜두기
+-- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- CREATE EXTENSION IF NOT EXISTS pg_trgm;
