@@ -1,15 +1,23 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: emotrust-pg
+    container_name: insuranceai-pg
     restart: always
     environment:
-      POSTGRES_USER: emotrust
-      POSTGRES_PASSWORD: emotrust_pw
-      POSTGRES_DB: emotrust
+      POSTGRES_USER: insurance
+      POSTGRES_PASSWORD: insurance_pw
+      POSTGRES_DB: insurance_ai
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - insurance_pgdata:/var/lib/postgresql/data
+      # 초기 기동 시 확장(벡터 등) 자동 생성
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insurance -d insurance_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
-  pgdata:
+  insurance_pgdata:
