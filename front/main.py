@@ -5,7 +5,7 @@ API_BASE = "http://localhost:8000"  # UTM 주소/포트에 맞게 수정
 SESSION_ID = "demo-session"
 
 st.set_page_config(page_title="RAG Chat", layout="centered")
-st.title("RAG Chat (Streamlit)")
+st.title("RAG Chat")
 
 with st.sidebar:
     st.markdown("### 설정")
