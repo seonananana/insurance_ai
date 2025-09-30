@@ -1,8 +1,5 @@
-"""
-파일 기능 요약
-- API 요청/응답에 쓰이는 Pydantic 스키마 정의.
-- 프론트-백 사이의 명확한 계약(필드명/타입/옵션) 제공.
-"""
+#API 요청/응답에 쓰이는 Pydantic 스키마 정의.
+#프론트-백 사이의 명확한 계약(필드명/타입/옵션) 제공.
 
 from pydantic import BaseModel, Field
 from typing import List, Optional

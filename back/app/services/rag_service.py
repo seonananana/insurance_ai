@@ -1,12 +1,5 @@
-"""
-파일 기능 요약
-- pgvector 기반 벡터 검색(문서 조항 + 레퍼런스)을 수행하고, 상위 결과를 정규화.
-- DB 스키마 컬럼/테이블 이름은 팀 표준에 맞춰 변경 가능하며, 해당 줄에 주석으로 표기.
-
-주의:
-- 아래 SQL은 pgvector의 cosine distance를 사용합니다.
-- document_chunks / reference_items를 UNION으로 묶어 통합 검색 예시를 제공합니다.
-"""
+#pgvector 기반 벡터 검색(문서 조항 + 레퍼런스)을 수행하고, 상위 결과를 정규화.
+#DB 스키마 컬럼/테이블 이름은 팀 표준에 맞춰 변경 가능하며, 해당 줄에 주석으로 표기.
 
 from typing import List, Dict, Any
 from psycopg_pool import AsyncConnectionPool
