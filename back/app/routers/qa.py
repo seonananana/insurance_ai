@@ -1,8 +1,5 @@
-"""
-파일 기능 요약
-- /qa/ask 엔드포인트: 질문을 받아 임베딩 → 벡터검색 → LLM 생성 → 근거와 함께 응답.
-- DB 스키마 컬럼/테이블은 rag_service에서 지정한(임의) 이름과 매칭됨.
-"""
+#/qa/ask 엔드포인트: 질문을 받아 임베딩 → 벡터검색 → LLM 생성 → 근거와 함께 응답.
+#DB 스키마 컬럼/테이블은 rag_service에서 지정한(임의) 이름과 매칭됨.
 
 from fastapi import APIRouter, Depends, Request, HTTPException
 from typing import List

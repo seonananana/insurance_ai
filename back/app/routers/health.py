@@ -1,7 +1,4 @@
-"""
-파일 기능 요약
-- 서비스 가용성/DB 연결 확인용 헬스체크 엔드포인트.
-"""
+#서비스 가용성/DB 연결 확인용 헬스체크 엔드포인트.
 
 from fastapi import APIRouter, Request
 

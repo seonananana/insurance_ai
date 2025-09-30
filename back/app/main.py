@@ -1,8 +1,5 @@
-"""
-파일 기능 요약
-- FastAPI 앱 초기화, 라우터 등록, DB 풀(psycopg async) 라이프사이클 관리.
-- 환경변수(OPENAI_API_KEY, DATABASE_URL)를 읽어 서비스에 주입.
-"""
+#FastAPI 앱 초기화, 라우터 등록, DB 풀(psycopg async) 라이프사이클 관리.
+#환경변수(OPENAI_API_KEY, DATABASE_URL)를 읽어 서비스에 주입.
 
 import os
 from fastapi import FastAPI
