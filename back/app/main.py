@@ -22,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/claims")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/claims")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # 전역 풀(비동기)
