@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
 openai
-python-multipart
-psycopg[binary,pool]
+python-dotenv
+psycopg2-binary
+sqlalchemy
