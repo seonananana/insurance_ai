@@ -1,18 +1,16 @@
 #서비스 가용성/DB 연결 확인용 헬스체크 엔드포인트.
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.main import get_db
 
 router = APIRouter()
 
-@router.get("")
-async def health(req: Request):
-    ok_db = False
+@router.get("/")
+def healthcheck(db: Session = Depends(get_db)):
     try:
-        pool = req.app.state.db_pool
-        async with pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT 1")
-        ok_db = True
-    except Exception:
-        ok_db = False
-    return {"ok": True, "db": ok_db}
+        db.execute(text("SELECT 1"))
+        return {"ok": True, "db": True}
+    except Exception as e:
+        return {"ok": True, "db": False, "error": str(e)}
