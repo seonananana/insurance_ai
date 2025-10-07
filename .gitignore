@@ -1,3 +1,4 @@
 # macOS 자동 생성 파일 무시
 .DS_Store
 .env
+back/.env
