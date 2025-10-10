@@ -10,7 +10,7 @@ OPENAI = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 JSON_DIR = Path(__file__).resolve().parent.parent / "data" / "curated"
 
 def embed(txt:str):
-    r = OPENAI.embeddings.create(model="text-embedding-3-large", input=txt)
+    r = OPENAI.embeddings.create(model="text-embedding-3-small", input=txt)
     return r.data[0].embedding
 
 with ENGINE.begin() as conn:
