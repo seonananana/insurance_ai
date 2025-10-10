@@ -47,6 +47,7 @@ def search_top_k(
     db: Session,
     *,
     query_vec: List[float],
+    policy_type: Optional[str] = None,
     top_k: int = 5
 ) -> List[Dict[str, Any]]:
     """
