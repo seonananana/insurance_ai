@@ -33,7 +33,7 @@ with tab1:
     if st.button("질문하기", use_container_width=True, disabled=not q):
         try:
             payload = {
-                "question": q,
+                "q": q,
                 "policy_type": policy or None,
                 "top_k": int(top_k),
                 "max_tokens": 600,
