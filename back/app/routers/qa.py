@@ -60,7 +60,7 @@ _emb = get_embeddings_client()
 async def ask(req: AskRequest, db: Session = Depends(get_db)) -> AnswerResponse:
     try:
         qv = _emb.embed([req.question])[0]
-        hits = search_top_k(db, query_vec=qv, policy_type=req.policy_type, top_k=req.top_k)
+        hits = search_top_k(db, query_vec=qv, top_k=req.top_k)
         snippets = []
         for h in hits[:2]:
             c = (h.get("content") or "").strip()
@@ -83,7 +83,7 @@ class SearchReq(AskRequest): ...
 async def search(req: SearchReq, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
     try:
         qv = _emb.embed([req.question])[0]
-        hits = search_top_k(db, query_vec=qv, policy_type=req.policy_type, top_k=req.top_k)
+        hits = search_top_k(db, query_vec=qv, top_k=req.top_k)
         return [{
             "doc_id": h["doc_id"],
             "chunk_id": h["chunk_id"],
