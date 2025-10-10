@@ -27,9 +27,9 @@ with tab1:
     with left:
         q = st.text_input("질문을 입력하세요", placeholder="예) 실손 청구에 필요한 서류는?")
     with right:
-    insurers = ["", "DB손해", "현대해상", "삼성화재"]
-    policy = st.selectbox("보험사(선택)", insurers, index=0)
-    top_k = st.slider("Top-K", 1, 10, 5)
+        insurers = ["", "DB손해", "현대해상", "삼성화재"]
+        policy = st.selectbox("보험사(선택)", insurers, index=0)
+        top_k = st.slider("Top-K", 1, 10, 5)
     
     if st.button("질문하기", use_container_width=True, disabled=not q):
         try:
