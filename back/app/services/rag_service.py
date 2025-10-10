@@ -1,16 +1,23 @@
-# pgvector 기반 벡터 검색(문서 조항 + 레퍼런스)을 수행하고, 상위 결과를 정규화.
-# DB 스키마 컬럼/테이블 이름은 팀 표준에 맞춰 변경 가능하며, 해당 줄에 주석으로 표기.
+# back/app/services/rag_service.py
+# -----------------------------------------------------------------------------
+# 기능: pgvector 기반 벡터 검색(문서 조항 + 레퍼런스)과 프롬프트 빌드
+#  - L2 거리(<->)로 정렬, 프론트에는 보기 쉬운 유사도 score = 1/(1+distance) 전달
+#  - policy_type(보험사/분류) 필터 지원
+#  - 테이블/컬럼명은 팀 표준에 맞게 바꿔도 무방 (주석 참고)
+# -----------------------------------------------------------------------------
 
+from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text as sql
+
 
 def build_prompt(question: str, passages: List[Dict[str, Any]]) -> str:
     """
     검색된 문서 청크(passages)를 사용자 질문과 함께 LLM에 전달할 프롬프트로 구성.
-    - passages: search_top_k() 결과 리스트
+    passages: search_top_k() 결과 리스트
     """
-    ctx_lines = []
+    ctx_lines: List[str] = []
     for p in passages:
         title = p.get("clause_title") or ""
         txt = p.get("content", "") or ""
@@ -26,7 +33,7 @@ def build_prompt(question: str, passages: List[Dict[str, Any]]) -> str:
         "- 간결하게 항목별로 정리하라.\n"
     )
 
-    return f"""[지시]
+    prompt = f"""[지시]
 {instructions}
 
 [질문]
@@ -35,55 +42,43 @@ def build_prompt(question: str, passages: List[Dict[str, Any]]) -> str:
 [근거 발췌]
 {chr(10).join(ctx_lines)}
 """
+    return prompt
 
-def _as_pgvector_literal(vec: List[float]) -> str:
-    """
-    pgvector는 파라미터를 문자열 리터럴('[v1,v2,...]')로 받아야 함.
-    """
-    # 소수점은 과하지 않게; 필요하면 자리수 조정
+
+# back/app/services/rag_service.py
+from sqlalchemy import text as sql
+
+def _as_pgvector_literal(vec):
     return "[" + ",".join(f"{float(x):.6f}" for x in vec) + "]"
 
-def search_top_k(
-    db: Session,
-    *,
-    query_vec: List[float],
-    policy_type: Optional[str] = None,
-    top_k: int = 5
-) -> List[Dict[str, Any]]:
-    """
-    pgvector 유사도 검색:
-      - embedding <-> query_vec 연산으로 유사도가 높은 문서 청크 Top-K 반환.
-    현재 테이블/컬럼:
-      - document_chunks                        # 테이블명
-      - doc_id TEXT                            # 문서 식별자
-      - chunk_id TEXT                          # 청크 식별자
-      - clause_title TEXT                      # 조항/섹션 제목
-      - content TEXT                           # 청크 텍스트
-      - embedding vector(1536)                 # 임베딩 벡터 (text-embedding-3-small)
-    """
-    qv = _as_pgvector_literal(query_vec)  # '[...]' 형태
+def search_top_k(db, *, query_vec, policy_type: Optional[str], top_k: int = 5):
+    qv = _as_pgvector_literal(query_vec)
 
-    sql = """
+    sqlq = """
     SELECT
       doc_id,
       chunk_id,
       clause_title,
       content,
-      (embedding <-> :qv::vector) AS score
+      1.0 / (1.0 + (embedding <-> CAST(:qv AS vector))) AS score
     FROM document_chunks
-    ORDER BY embedding <-> :qv::vector
+    WHERE (CAST(:ptype AS text) IS NULL OR policy_type = CAST(:ptype AS text))
+    ORDER BY embedding <-> CAST(:qv AS vector)
     LIMIT :k
     """
 
-    rows = db.execute(text(sql), {"qv": qv, "k": int(top_k)}).mappings().all()
+    rows = db.execute(
+        sql(sqlq),
+        {"qv": qv, "ptype": policy_type, "k": top_k}
+    ).mappings().all()
 
-    results: List[Dict[str, Any]] = []
-    for r in rows:
-        results.append({
-            "doc_id": r.get("doc_id"),
-            "chunk_id": r.get("chunk_id"),
+    return [
+        {
+            "doc_id": r["doc_id"],
+            "chunk_id": r["chunk_id"],
             "clause_title": r.get("clause_title"),
-            "content": r.get("content"),
-            "score": float(r.get("score")) if r.get("score") is not None else None,
-        })
-    return results
+            "content": r["content"],
+            "score": float(r["score"]) if r.get("score") is not None else None,
+        }
+        for r in rows
+    ]
