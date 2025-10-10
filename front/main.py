@@ -27,7 +27,7 @@ with tab1:
     with left:
         q = st.text_input("질문을 입력하세요", placeholder="예) 실손 청구에 필요한 서류는?")
     with right:
-        policy = st.selectbox("보험 유형(선택)", ["", "실손", "자동차", "화재"], index=0)
+        policy = st.selectbox("보험 유형(선택)", ["", "실손의료비", "암보험", "화재보험"], index=0)
         top_k = st.slider("Top-K", 1, 10, 5)
 
     if st.button("질문하기", use_container_width=True, disabled=not q):
@@ -67,7 +67,7 @@ with tab2:
     with left:
         q_search = st.text_input("검색어", key="search", placeholder="예) 입원비 지급 한도")
     with right:
-        policy2 = st.selectbox("보험 유형(선택)", ["", "실손", "자동차", "화재"], index=0, key="policy2")
+        policy2 = st.selectbox("보험 유형(선택)", ["", "실손의료비", "암보험", "화재보험"], index=0, key="policy2")
         top_k2 = st.slider("Top-K(검색)", 1, 20, 5, key="topk2")
 
     if st.button("검색하기", use_container_width=True, disabled=not q_search):
