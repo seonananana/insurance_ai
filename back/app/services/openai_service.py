@@ -5,7 +5,7 @@ import os
 from typing import List, Tuple, Optional, Dict, Any
 from openai import OpenAI
 
-_EMBED_MODEL = "text-embedding-3-smallㄴ"
+_EMBED_MODEL = "text-embedding-3-small"
 _CHAT_MODEL  = "gpt-4o-mini"
 
 class OpenAIService:
