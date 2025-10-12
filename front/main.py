@@ -83,38 +83,50 @@ with st.container():
                     st.session_state.history.append(("assistant", reply))
 
     # ---------------------------
-    # 버튼 2: RAG 근거 기반 답변 (/qa/ask)
-    # ---------------------------
-    with c2:
-        if st.button("근거 기반 답변 PDF 받기", use_container_width=True):
-            msg = (user_msg or "").strip()
-            if not msg:
-                st.warning("메시지를 입력하세요.")
-            else:
-                # 백엔드 스키마가 message 또는 query를 요구할 수 있어 둘 다 전송 (422 예방)
-                payload = {
-                    "message": msg,
-                    "query": msg,
-                    "insurer": insurer,
-                    "top_k": int(topk),
-                    "temperature": DEFAULT_TEMP,
-                    "max_tokens": DEFAULT_MAXTOK,
-                }
-                data, err = post_json(f"{API_BASE}/qa/ask", payload)
-                if err:
-                    st.error(f"요청 실패: {err}")
+# 버튼 2: RAG 근거 기반 답변 PDF 받기 (/qa/answer_pdf)
+# ---------------------------
+with c2:
+    if st.button("근거 기반 답변 PDF 받기", use_container_width=True):
+        msg = (user_msg or "").strip()
+        if not msg:
+            st.warning("메시지를 입력하세요.")
+        else:
+            payload = {
+                "q": msg,
+                "insurer": insurer,
+                "top_k": int(topk),
+            }
+
+            # 1) 정식 경로
+            url = f"{API_BASE}/qa/answer_pdf"
+
+            try:
+                r = requests.post(url, json=payload, timeout=(20, 180))
+                if r.status_code != 200:
+                    # 혹시 다른 라우팅일 때(옵션): /report/answer_pdf로 한 번 더 시도
+                    if r.status_code == 404:
+                        url_fallback = f"{API_BASE}/report/answer_pdf"
+                        r = requests.post(url_fallback, json=payload, timeout=(20, 180))
+
+                if r.status_code != 200:
+                    st.error(f"요청 실패({r.status_code}): {r.text}")
                 else:
-                    answer = data.get("answer") or data.get("reply") or ""
-                    pdf_url = data.get("pdf_url") or data.get("file_path")
-                    if answer:
-                        st.session_state.history.append(("user", msg))
-                        st.session_state.history.append(("assistant", answer))
-                    if pdf_url:
-                        # 백엔드가 /files/... 형태로 주면 앞에 API_BASE 붙여 링크
-                        if pdf_url.startswith("/"):
-                            st.markdown(f"[📄 PDF 다운로드]({API_BASE}{pdf_url})")
-                        else:
-                            st.markdown(f"[📄 PDF 다운로드]({pdf_url})")
+                    ctype = r.headers.get("content-type", "").lower()
+                    if ctype.startswith("application/pdf"):
+                        fname = f"rag_answer_{insurer}_top{int(topk)}.pdf"
+                        st.success("PDF 생성 완료. 아래 버튼으로 다운로드하세요.")
+                        st.download_button(
+                            "PDF 다운로드", data=r.content, file_name=fname, mime="application/pdf"
+                        )
+                    else:
+                        # 서버가 PDF가 아닌 JSON/텍스트를 보냈을 때 디버깅용 출력
+                        preview = r.text
+                        if len(preview) > 800:
+                            preview = preview[:800] + " …"
+                        st.error("서버가 PDF가 아닌 응답을 보냈습니다.")
+                        st.code(preview)
+            except requests.RequestException as e:
+                st.error(f"요청 실패: {e}")
 
 # ---------------------------
 # 최근 대화
