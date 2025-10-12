@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.services.embeddings_factory import get_embeddings_client
-from app.services.rag_service import search_top_k, build_prompt
+from app.services.rag_service import retrieve_context
 from app.schemas import AskRequest, AnswerResponse, SearchRequest
 
 router = APIRouter(tags=["qa"])
