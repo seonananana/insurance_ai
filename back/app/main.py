@@ -17,6 +17,13 @@ except Exception:
 
 app = FastAPI(title="Insurance RAG API", version="0.3.0")
 
+FILES_DIR = Path(os.getenv("FILES_DIR", "files")).resolve()
+FILES_DIR.mkdir(parents=True, exist_ok=True)
+(FILES_DIR / "chat_logs").mkdir(parents=True, exist_ok=True)
+(FILES_DIR / "pdfs").mkdir(parents=True, exist_ok=True)
+
+app.mount("/files", StaticFiles(directory=str(FILES_DIR)), name="files")
+
 # 로컬 개발용 CORS (Streamlit)
 app.add_middleware(
     CORSMiddleware,
