@@ -10,6 +10,7 @@
 import os
 import requests
 import streamlit as st
+import requests, streamlit as st, os
 
 # 백엔드 주소: 환경변수 > secrets.toml > 기본값
 API_BASE = os.getenv("API_BASE") or st.secrets.get("API_BASE", "http://localhost:8000")
