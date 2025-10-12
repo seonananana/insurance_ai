@@ -3,7 +3,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import health, qa  # get_db는 import 안 함(순환 방지)
+from app.routers import health, qa, chat  # get_db는 import 안 함(순환 방지)
 
 app = FastAPI(title="Insurance RAG API", version="0.2.2")
 
@@ -19,6 +19,7 @@ app.add_middleware(
 # 라우터
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(qa.router,     prefix="/qa",     tags=["qa"])
+app.include_router(chat.router,   prefix="/chat",   tags=["chat"])
 
 @app.get("/")
 def root():
