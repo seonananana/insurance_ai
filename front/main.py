@@ -66,7 +66,7 @@ with st.container():
                 st.warning("메시지를 입력하세요.")
             else:
                 payload = {
-                    "message": msg,
+                    "messages": [{"role": "user", "content": msg}],  # ✅ ← 중요 (ChatRequest 형식 맞춤)
                     "insurer": insurer,
                     "top_k": int(topk),
                     "temperature": DEFAULT_TEMP,
@@ -77,6 +77,8 @@ with st.container():
                     st.error(f"요청 실패: {err}")
                 else:
                     reply = data.get("reply", "")
+                    if not reply:
+                        reply = "⚠️ 문서에서 관련 근거를 찾지 못했습니다. 보험사 선택/Top-K/인덱스를 확인해주세요."
                     st.session_state.history.append(("user", msg))
                     st.session_state.history.append(("assistant", reply))
 
