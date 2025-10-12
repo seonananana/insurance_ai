@@ -10,17 +10,6 @@
 import os
 import requests
 import streamlit as st# front/main.py
-# -----------------------------------------------------------------------------
-# 기능: Streamlit 프론트엔드
-#  - 백엔드 FastAPI 라우트(/qa/ask, /qa/search)에 맞춰 호출 경로를 정정
-#  - Q&A 탭: 질문 → /qa/ask 호출 → 답변/출처 표시
-#  - 문서 검색 탭: 키워드 → /qa/search 호출 → 스니펫/점수 표시
-#  - API_BASE는 secrets.toml 또는 환경변수에서 읽음
-# -----------------------------------------------------------------------------
-
-import os
-import requests
-import streamlit as st
 
 # 백엔드 주소: secrets.toml > 환경변수 > 기본값 순
 API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://localhost:8000")
@@ -50,7 +39,7 @@ with tab1:
                         "top_k": int(top_k),
                       }
             if policy:  # 빈 문자열("")이면 아예 안 보냄
-                     payload["policy_type"] = policy
+                payload["policy_type"] = policy
               # max_tokens는 백엔드가 안 받으면 빼자. 필요할 때만 추가.
 
             resp = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=60)  # <-- /qa/ask 로 정정
