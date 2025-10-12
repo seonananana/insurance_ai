@@ -86,30 +86,28 @@ with st.container():
     # 버튼 2: RAG 근거 기반 답변 (/qa/ask)
     # ---------------------------
     with c2:
-        if st.button("근거 기반 답변 PDF 받기", use_container_width=True):
-            msg = (user_msg or "").strip()
-            if not msg:
-                st.warning("메시지를 입력하세요.")
+        if st.button("근거 기반 답변 PDF 받기"):
+    if not query.strip():
+        st.warning("질문을 입력하세요.")
+    else:
+        payload = {
+            "message": query,   # ✅ 키 이름 통일
+            "insurer": insurer or None,
+            "top_k": top_k
+        }
+        try:
+            res = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=90)
+            if res.status_code == 200:
+                data = res.json()
+                pdf_url = data.get("pdf_url") or data.get("file_path")
+                answer = data.get("answer") or "응답이 없습니다."
+                st.markdown(f"**📄 답변:** {answer}")
+                if pdf_url:
+                    st.markdown(f"[다운로드 PDF]({API_BASE}{pdf_url})")
             else:
-                payload = {
-                    "query": msg,
-                    "insurer": insurer,
-                    "top_k": int(topk),
-                    "temperature": DEFAULT_TEMP,
-                    "max_tokens": DEFAULT_MAXTOK,
-                }
-                data, err = post_json(f"{API_BASE}/qa/ask", payload)
-                if err:
-                    st.error(f"요청 실패: {err}")
-                else:
-                    answer = data.get("answer", "")
-                    cites = data.get("citations", [])
-                    cite_txt = ", ".join([f"{c.get('file')} p.{c.get('page')}" for c in cites]) if cites else ""
-                    if cite_txt:
-                        answer = f"{answer}\n\n— 근거: {cite_txt}"
-                    st.session_state.history.append(("user", msg))
-                    st.session_state.history.append(("assistant", answer))
-
+                st.error(f"요청 실패: {res.status_code} {res.text}")
+        except Exception as e:
+            st.error(f"요청 중 오류 발생: {e}")
 # ---------------------------
 # 최근 대화
 # ---------------------------
