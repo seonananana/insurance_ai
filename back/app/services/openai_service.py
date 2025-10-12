@@ -36,3 +36,20 @@ class OpenAIService:
     @property
     def chat_model(self) -> str:
         return _CHAT_MODEL
+
+_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"),
+                 base_url=os.getenv("OPENAI_BASE", "https://api.openai.com/v1"))
+_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+def chat(messages, temperature=0.3, max_tokens=512):
+    """
+    OpenAI ChatCompletion API 호출.
+    messages = [{"role":"system/user/assistant", "content":"..."}]
+    """
+    r = _client.chat.completions.create(
+        model=_MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return r.choices[0].message.content
