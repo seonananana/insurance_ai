@@ -18,7 +18,14 @@ from app.services.rag_service import search_top_k, build_prompt
 from app.schemas import AskRequest, AnswerResponse, SearchRequest
 
 router = APIRouter(tags=["qa"])
-_emb = get_embeddings_client()
+EMB = get_embeddings_client()
+
+def answer_question(db, question, policy_type=None, top_k=5):
+    qv = EMB.embed([question], is_query=True)[0]  # 쿼리 프리픽스 적용
+    passages = search_top_k(db, query_vec=qv, policy_type=policy_type, top_k=top_k)
+    prompt = build_prompt(question, passages)
+    # (결제 전이면 LLM 호출 없이 passages만 반환 or 로컬 규칙기반 답변)
+    return {"passages": passages, "prompt": prompt}
 
 
 @router.post("/ask", response_model=AnswerResponse)
