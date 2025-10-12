@@ -17,7 +17,7 @@ from app.services.embeddings_factory import get_embeddings_client
 from app.services.rag_service import search_top_k, build_prompt
 from app.schemas import AskRequest, AnswerResponse, SearchRequest
 
-router = APIRouter(prefix="/qa", tags=["qa"])
+router = APIRouter(tags=["qa"])
 _emb = get_embeddings_client()
 
 
