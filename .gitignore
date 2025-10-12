@@ -1,10 +1,32 @@
-# macOS 자동 생성 파일 무시
-.DS_Store
-.env
-back/.env
-
-# Python cache
+# ---- Python cache / build ----
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# ---- OS / IDE ----
 .DS_Store
+*.swp
+.vscode/
+.idea/
+
+# ---- Secrets / env ----
 .env
+.env.local
+.secrets/
+*.key
+
+# ---- Project generated files ----
+files/               # PDF 등 정적 산출물
+back/data/tmp/
+back/data/output/
+front/.streamlit/state.json
+
+# ---- Notebooks (optional) ----
+.ipynb_checkpoints/
+
+# ---- Node (if any) ----
+node_modules/
