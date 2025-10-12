@@ -32,7 +32,6 @@ st.markdown(
     """
     <div style="display:flex;align-items:end;gap:14px;margin-bottom:6px">
       <h1 style="margin:0">보험 문서 RAG 플랫폼</h1>
-      <span style="color:#666;font-size:14px">대화 + 검색 + PDF 한 번에</span>
     </div>
     """,
     unsafe_allow_html=True,
