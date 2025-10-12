@@ -112,8 +112,8 @@ with tab2:
             st.error(f"검색 실패: {e}")
 
 # 하단 디버그용 표시(선택)
+API_BASE = "http://localhost:8000"
 st.caption(f"API_BASE = {API_BASE}")
-localhost:8000")
 
 st.set_page_config(page_title="보험 RAG 플랫폼", layout="wide")
 st.title("보험 문서 RAG 플랫폼")
