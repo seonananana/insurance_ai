@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 .DS_Store
 .envㄴ
+
+# ---- Python / venv / cache ----
+back/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
