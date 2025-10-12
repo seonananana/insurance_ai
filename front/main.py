@@ -1,31 +1,27 @@
 # front/main.py
 # -----------------------------------------------------------------------------
-# 기능: Streamlit 프론트엔드
-#  - 백엔드 FastAPI 라우트(/qa/ask, /qa/search) 호출
-#  - Q&A 탭: 질문 → /qa/ask → 답변/출처 표시
-#  - 문서 검색 탭: 키워드 → /qa/search → 스니펫/점수 표시
-#  - API_BASE: 환경변수 > secrets.toml > 기본값
+# 보험 문서 RAG 플랫폼 (Streamlit)
+# - Q&A: /qa/ask
+# - 문서 검색: /qa/search
+# - Chat: /chat/log (대화 저장) + /qa/answer_pdf (PDF 생성)
 # -----------------------------------------------------------------------------
 
 import os
 import requests
 import streamlit as st
-import requests, streamlit as st, os
 
-# 백엔드 주소: 환경변수 > secrets.toml > 기본값
-API_BASE = os.getenv("API_BASE") or st.secrets.get("API_BASE", "http://localhost:8000")
-
-st.set_page_config(page_title="보험 RAG 플랫폼", layout="wide")
+API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://localhost:8000")
+st.set_page_config(page_title="보험 문서 RAG 플랫폼", layout="wide")
 st.title("보험 문서 RAG 플랫폼")
 
-tab1, tab2 = st.tabs(["Q&A", "문서 검색"])
-
-# 공통: 보험사 선택 옵션 (ETL의 상위 폴더명과 일치해야 필터 적용)
+DEFAULT_TIMEOUT = (5, 60)  # (connect, read)
 INSURERS = ["", "DB손해", "현대해상", "삼성화재"]
 
-# -----------------------------
-# Q&A 탭: /qa/ask 호출
-# -----------------------------
+tab1, tab2, tab3 = st.tabs(["Q&A", "문서 검색", "Chat"])
+
+# =============================================================================
+# Tab 1: Q&A (/qa/ask)
+# =============================================================================
 with tab1:
     left, right = st.columns([3, 1])
     with left:
@@ -36,15 +32,10 @@ with tab1:
 
     if st.button("질문하기", use_container_width=True, disabled=not q):
         try:
-            payload = {
-                "q": q,
-                "top_k": int(top_k),
-            }
-            # 빈 문자열("")이면 보내지 않음 (검증 오류 방지)
+            payload = {"q": q, "top_k": int(top_k)}
             if policy:
                 payload["policy_type"] = policy
-
-            resp = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=60)
+            resp = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=DEFAULT_TIMEOUT)
             resp.raise_for_status()
             data = resp.json()
 
@@ -60,16 +51,18 @@ with tab1:
                     score_txt = f" · score={score:.4f}" if isinstance(score, (int, float)) else ""
                     st.markdown(f"- **{title}**{score_txt}")
                     with st.expander("내용 보기", expanded=False):
-                        st.write((s.get("content", "") or "")[:1200])
+                        st.write((s.get("content") or "")[:1500])
 
-        except requests.RequestException as e:
-            st.error(f"요청 실패: {e}")
+        except requests.exceptions.ConnectionError:
+            st.error(f"백엔드 연결 실패: {API_BASE} 가 실행 중인지 확인하세요.")
+        except requests.exceptions.Timeout:
+            st.error("요청이 시간 초과되었습니다. 잠시 후 다시 시도해주세요.")
         except Exception as e:
-            st.error(f"알 수 없는 오류: {e}")
+            st.error(f"요청 실패: {e}")
 
-# -----------------------------
-# 문서 검색 탭: /qa/search 호출
-# -----------------------------
+# =============================================================================
+# Tab 2: 문서 검색 (/qa/search)
+# =============================================================================
 with tab2:
     left, right = st.columns([3, 1])
     with left:
@@ -84,19 +77,12 @@ with tab2:
             if policy2:
                 payload["policy_type"] = policy2
 
-            resp = requests.post(f"{API_BASE}/qa/search)", json=payload, timeout=30)
-            # ↑ 오타 방지: 위 줄의 끝에 '}' 가 들어가면 안 됩니다. 정확히는:
-            # resp = requests.post(f"{API_BASE}/qa/search", json=payload, timeout=30)
-        except Exception:
-            # 오타 방지용으로 한 번 더 정확히 호출
-            resp = requests.post(f"{API_BASE}/qa/search", json=payload, timeout=30)
-
-        try:
+            resp = requests.post(f"{API_BASE}/qa/search", json=payload, timeout=DEFAULT_TIMEOUT)
             resp.raise_for_status()
             items = resp.json()
 
             if not items:
-                st.info("검색 결과가 없습니다. (임베딩 데이터 확인)")
+                st.info("검색 결과가 없습니다. (임베딩/DB 데이터를 확인하세요)")
             else:
                 st.markdown("### 검색 결과")
                 for it in items:
@@ -107,42 +93,81 @@ with tab2:
                     st.markdown(f"- **{title}**{score_txt}")
                     st.write(snippet)
 
-        except requests.RequestException as e:
-            st.error(f"검색 실패: {e}")
+        except requests.exceptions.ConnectionError:
+            st.error(f"백엔드 연결 실패: {API_BASE} 가 실행 중인지 확인하세요.")
+        except requests.exceptions.Timeout:
+            st.error("요청이 시간 초과되었습니다. 잠시 후 다시 시도해주세요.")
         except Exception as e:
-            st.error(f"알 수 없는 오류: {e}")
+            st.error(f"검색 실패: {e}")
 
-# 하단 디버그용 표시(선택)
-st.caption(f"API_BASE = {API_BASE}")
-
-API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://localhost:8000")
-
-tab1, tab2, tab3 = st.tabs(["Q&A", "문서 검색", "Chat"])  # ← Chat 탭 추가
-
+# =============================================================================
+# Tab 3: Chat  (대화 저장 + PDF 생성)
+# =============================================================================
 with tab3:
-    st.subheader("OpenAI Chat")
+    st.subheader("대화형 Q&A (RAG + PDF)")
+
+    if "conv_id" not in st.session_state:
+        st.session_state.conv_id = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+
+    # 입력영역
     user_in = st.text_input("메시지 입력", key="chat_input", placeholder="무엇이든 질문하세요")
-    colA, colB = st.columns([1,1])
+    colA, colB, colC = st.columns([1, 1, 1])
     with colA:
-        temp = st.slider("temperature", 0.0, 1.0, 0.3, 0.1)
+        policy3 = st.selectbox("보험사(선택)", INSURERS, index=0, key="policy3")
     with colB:
-        mtok = st.slider("max_tokens", 64, 2048, 512, 64)
+        top_k3 = st.slider("Top-K", 1, 10, 3, key="topk3")
+    with colC:
+        st.caption(" ")  # spacing
+        send_clicked = st.button("보내기", use_container_width=True, disabled=not user_in)
 
-    if st.button("보내기", use_container_width=True, disabled=not user_in):
-        msgs = [{"role":"user","content":user_in}]
-        # (원하면 대화 맥락 유지) st.session_state.chat_history 누적 사용
-        payload = {"messages": st.session_state.chat_history + msgs, "temperature": float(temp), "max_tokens": int(mtok)}
+    # 1) 대화 저장
+    if send_clicked:
         try:
-            r = requests.post(f"{API_BASE}/chat/completion", json=payload, timeout=60)
+            payload = {
+                "conv_id": st.session_state.conv_id,
+                "message": {"role": "user", "content": user_in},
+            }
+            r = requests.post(f"{API_BASE}/chat/log", json=payload, timeout=(5, 30))
             r.raise_for_status()
-            reply = r.json().get("reply","")
-            st.session_state.chat_history += msgs + [{"role":"assistant","content":reply}]
+            st.session_state.conv_id = r.json()["conv_id"]
+            st.session_state.chat_history.append({"role": "user", "content": user_in})
+            st.success("메시지 저장됨")
         except Exception as e:
-            st.error(f"요청 실패: {e}")
+            st.error(f"대화 저장 실패: {e}")
 
-    # 대화 표시
+    # 2) PDF 생성 버튼
+    st.divider()
+    pdf_clicked = st.button(
+        "근거 기반 답변 PDF 받기",
+        use_container_width=True,
+        disabled=not (st.session_state.conv_id or user_in),
+    )
+    if pdf_clicked:
+        try:
+            # conv_id가 있으면 그걸 우선 사용. 없으면 현재 입력을 단일 질문으로 보냄.
+            payload = {
+                "conv_id": st.session_state.conv_id,
+                "question": None if st.session_state.conv_id else (user_in or None),
+                "policy_type": policy3 or None,
+                "top_k": int(top_k3),
+                "max_tokens": 800,
+            }
+            r = requests.post(f"{API_BASE}/qa/answer_pdf", json=payload, timeout=(10, 120))
+            r.raise_for_status()
+            out = r.json()
+            st.success("PDF 생성 완료!")
+            st.markdown("**요약 답변**")
+            st.write(out.get("answer", ""))
+            st.markdown(f"[PDF 다운로드]({API_BASE}{out['pdf_url']})")
+        except Exception as e:
+            st.error(f"PDF 생성 실패: {e}")
+
+    # 최근 대화 표시
+    st.markdown("### 최근 대화")
     for m in st.session_state.chat_history[-12:]:
-        role = "🧑‍💻" if m["role"]=="user" else "🤖"
+        role = "🧑" if m["role"] == "user" else "🤖"
         st.markdown(f"**{role} {m['role']}**: {m['content']}")
+
+st.caption(f"API_BASE = {API_BASE}")
