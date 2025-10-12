@@ -16,6 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/files", StaticFiles(directory="files"), name="files")   # ← PDF 서빙
+
 # 라우터
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(qa.router,     prefix="/qa",     tags=["qa"])
