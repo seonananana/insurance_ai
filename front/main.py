@@ -115,9 +115,6 @@ with tab2:
 API_BASE = "http://localhost:8000"
 st.caption(f"API_BASE = {API_BASE}")
 
-st.set_page_config(page_title="보험 RAG 플랫폼", layout="wide")
-st.title("보험 문서 RAG 플랫폼")
-
 tab1, tab2 = st.tabs(["Q&A", "문서 검색"])
 
 # -----------------------------
