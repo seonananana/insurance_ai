@@ -113,3 +113,35 @@ with tab2:
 
 # 하단 디버그용 표시(선택)
 st.caption(f"API_BASE = {API_BASE}")
+
+API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://localhost:8000")
+
+tab1, tab2, tab3 = st.tabs(["Q&A", "문서 검색", "Chat"])  # ← Chat 탭 추가
+
+with tab3:
+    st.subheader("OpenAI Chat")
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    user_in = st.text_input("메시지 입력", key="chat_input", placeholder="무엇이든 질문하세요")
+    colA, colB = st.columns([1,1])
+    with colA:
+        temp = st.slider("temperature", 0.0, 1.0, 0.3, 0.1)
+    with colB:
+        mtok = st.slider("max_tokens", 64, 2048, 512, 64)
+
+    if st.button("보내기", use_container_width=True, disabled=not user_in):
+        msgs = [{"role":"user","content":user_in}]
+        # (원하면 대화 맥락 유지) st.session_state.chat_history 누적 사용
+        payload = {"messages": st.session_state.chat_history + msgs, "temperature": float(temp), "max_tokens": int(mtok)}
+        try:
+            r = requests.post(f"{API_BASE}/chat/completion", json=payload, timeout=60)
+            r.raise_for_status()
+            reply = r.json().get("reply","")
+            st.session_state.chat_history += msgs + [{"role":"assistant","content":reply}]
+        except Exception as e:
+            st.error(f"요청 실패: {e}")
+
+    # 대화 표시
+    for m in st.session_state.chat_history[-12:]:
+        role = "🧑‍💻" if m["role"]=="user" else "🤖"
+        st.markdown(f"**{role} {m['role']}**: {m['content']}")
