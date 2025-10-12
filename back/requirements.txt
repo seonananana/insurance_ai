@@ -4,3 +4,4 @@ openai
 python-dotenv
 psycopg2-binary
 sqlalchemy
+fpdf2>=2.7.8
