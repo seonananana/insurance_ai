@@ -39,13 +39,11 @@ app.mount("/files", StaticFiles(directory="files"), name="files")
 # 라우터
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(qa.router,     prefix="/qa",     tags=["qa"])
-app.include_router(chat.router,   prefix="/chat",   tags=["chat"])
-
-# 선택 라우터(존재할 때만 등록)
+app.include_router(chat.router)        # ← prefix 제거
 if chatlog is not None:
-    app.include_router(chatlog.router, prefix="/chat", tags=["chat"])
+    app.include_router(chatlog.router) # ← prefix 제거
 if report is not None:
-    app.include_router(report.router,  prefix="/qa",   tags=["qa"])
+    app.include_router(report.router)  # ← prefix 제거
 
 @app.get("/")
 def root():
