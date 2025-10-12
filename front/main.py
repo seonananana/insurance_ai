@@ -9,7 +9,7 @@
 
 import os
 import requests
-import streamlit as st# front/main.py
+import streamlit as st
 
 # 백엔드 주소: secrets.toml > 환경변수 > 기본값 순
 API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://localhost:8000")
@@ -27,22 +27,21 @@ with tab1:
     with left:
         q = st.text_input("질문을 입력하세요", placeholder="예) 실손 청구에 필요한 서류는?")
     with right:
-     insurers = ["", "DB손해", "현대해상", "삼성화재"]
-     policy = st.selectbox("보험사(선택)", insurers, index=0)
-     top_k = st.slider("Top-K", 1, 10, 5)
-
+        insurers = ["", "DB손해", "현대해상", "삼성화재"]
+        policy = st.selectbox("보험사(선택)", insurers, index=0)
+        top_k = st.slider("Top-K", 1, 10, 5)
 
     if st.button("질문하기", use_container_width=True, disabled=not q):
         try:
             payload = {
-                        "q": q,
-                        "top_k": int(top_k),
-                      }
+                "q": q,
+                "top_k": int(top_k),
+            }
             if policy:  # 빈 문자열("")이면 아예 안 보냄
                 payload["policy_type"] = policy
-              # max_tokens는 백엔드가 안 받으면 빼자. 필요할 때만 추가.
+            # max_tokens는 백엔드가 안 받으면 빼자. 필요할 때만 추가.
 
-            resp = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=60)  # <-- /qa/ask 로 정정
+            resp = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=60)
             resp.raise_for_status()
             data = resp.json()
 
@@ -71,17 +70,17 @@ with tab2:
     with left:
         q_search = st.text_input("검색어", key="search", placeholder="예) 입원비 지급 한도")
     with right:
-     insurers = ["", "DB손해", "현대해상", "삼성화재"]
-     policy2 = st.selectbox("보험사(선택)", insurers, index=0, key="policy2")
-     top_k2 = st.slider("Top-K(검색)", 1, 20, 5, key="topk2")
+        insurers = ["", "DB손해", "현대해상", "삼성화재"]
+        policy2 = st.selectbox("보험사(선택)", insurers, index=0, key="policy2")
+        top_k2 = st.slider("Top-K(검색)", 1, 20, 5, key="topk2")
 
     if st.button("검색하기", use_container_width=True, disabled=not q_search):
         try:
             payload = {"q": q_search, "top_k": int(top_k2)}
             if policy2:
                 payload["policy_type"] = policy2
-                
-            resp = requests.post(f"{API_BASE}/qa/search", json=payload, timeout=30)  # <-- /qa/search 로 정정
+
+            resp = requests.post(f"{API_BASE}/qa/search", json=payload, timeout=30)
             resp.raise_for_status()
             items = resp.json()
 
@@ -100,6 +99,5 @@ with tab2:
         except Exception as e:
             st.error(f"검색 실패: {e}")
 
-# 하단 디버그용 표시(선택)
-API_BASE = "http://localhost:8000"
+# 하단 디버그 표시
 st.caption(f"API_BASE = {API_BASE}")
