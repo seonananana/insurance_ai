@@ -8,7 +8,7 @@ st.set_page_config(page_title="보험 문서 RAG", page_icon="🧾", layout="wid
 # ---------------------------
 # 환경 설정
 # ---------------------------
-API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE") or "http://localhost:8000"
+API_BASE = os.getenv("API_BASE") or "http://127.0.0.1:8000"
 
 # 기본 파라미터
 DEFAULT_TEMP = 0.3
