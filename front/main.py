@@ -66,7 +66,7 @@ with st.container():
                 st.warning("메시지를 입력하세요.")
             else:
                 payload = {
-                    "messages": [{"role": "user", "content": msg}],  # ✅ ← 중요 (ChatRequest 형식 맞춤)
+                    "messages": [{"role": "user", "content": msg}],  # ChatRequest 스키마에 맞춤
                     "insurer": insurer,
                     "top_k": int(topk),
                     "temperature": DEFAULT_TEMP,
@@ -86,28 +86,36 @@ with st.container():
     # 버튼 2: RAG 근거 기반 답변 (/qa/ask)
     # ---------------------------
     with c2:
-        if st.button("근거 기반 답변 PDF 받기"):
-    if not query.strip():
-        st.warning("질문을 입력하세요.")
-    else:
-        payload = {
-            "message": query,   # ✅ 키 이름 통일
-            "insurer": insurer or None,
-            "top_k": top_k
-        }
-        try:
-            res = requests.post(f"{API_BASE}/qa/ask", json=payload, timeout=90)
-            if res.status_code == 200:
-                data = res.json()
-                pdf_url = data.get("pdf_url") or data.get("file_path")
-                answer = data.get("answer") or "응답이 없습니다."
-                st.markdown(f"**📄 답변:** {answer}")
-                if pdf_url:
-                    st.markdown(f"[다운로드 PDF]({API_BASE}{pdf_url})")
+        if st.button("근거 기반 답변 PDF 받기", use_container_width=True):
+            msg = (user_msg or "").strip()
+            if not msg:
+                st.warning("메시지를 입력하세요.")
             else:
-                st.error(f"요청 실패: {res.status_code} {res.text}")
-        except Exception as e:
-            st.error(f"요청 중 오류 발생: {e}")
+                # 백엔드 스키마가 message 또는 query를 요구할 수 있어 둘 다 전송 (422 예방)
+                payload = {
+                    "message": msg,
+                    "query": msg,
+                    "insurer": insurer,
+                    "top_k": int(topk),
+                    "temperature": DEFAULT_TEMP,
+                    "max_tokens": DEFAULT_MAXTOK,
+                }
+                data, err = post_json(f"{API_BASE}/qa/ask", payload)
+                if err:
+                    st.error(f"요청 실패: {err}")
+                else:
+                    answer = data.get("answer") or data.get("reply") or ""
+                    pdf_url = data.get("pdf_url") or data.get("file_path")
+                    if answer:
+                        st.session_state.history.append(("user", msg))
+                        st.session_state.history.append(("assistant", answer))
+                    if pdf_url:
+                        # 백엔드가 /files/... 형태로 주면 앞에 API_BASE 붙여 링크
+                        if pdf_url.startswith("/"):
+                            st.markdown(f"[📄 PDF 다운로드]({API_BASE}{pdf_url})")
+                        else:
+                            st.markdown(f"[📄 PDF 다운로드]({pdf_url})")
+
 # ---------------------------
 # 최근 대화
 # ---------------------------
