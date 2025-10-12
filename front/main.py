@@ -114,5 +114,3 @@ with tab2:
 # 하단 디버그용 표시(선택)
 API_BASE = "http://localhost:8000"
 st.caption(f"API_BASE = {API_BASE}")
-
-tab1, tab2 = st.tabs(["Q&A", "문서 검색"])
