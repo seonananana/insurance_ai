@@ -16,7 +16,7 @@ import streamlit as st
 # ----------------------------
 # 기본 설정
 # ----------------------------
-API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://localhost:8000")
+API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE", "http://127.0.0.1:8000")
 st.set_page_config(page_title="보험 문서 RAG", layout="wide")
 
 # 세션 상태
