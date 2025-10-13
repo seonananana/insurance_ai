@@ -53,33 +53,47 @@ def on_change_insurer():
 with st.sidebar:
     st.subheader("⚙️ 설정")
 
-    # 1) 보험사 (사용자가 클릭해야 선택됨)
-    st.session_state.insurer = st.selectbox(
+    # --- 보험사 선택 (placeholder 분리) ---
+    placeholder_label = "선택하세요…"
+    options = [placeholder_label] + INSURERS
+
+    # 현재 상태를 options 인덱스로 환산 (없으면 0 = placeholder)
+    current = st.session_state.get("insurer")
+    idx = options.index(current) + 1 if current in INSURERS else 0
+
+    choice = st.selectbox(
         "보험사",
-        ["선택하세요…"] + INSURERS if st.session_state.insurer is None else INSURERS,
-        index=0 if st.session_state.insurer is None else INSURERS.index(st.session_state.insurer),
-        on_change=on_change_insurer,
+        options,
+        index=idx,
+        key="insurer_select",
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
-    # 2) 검색/생성 파라미터
+    # 선택 결과를 세션 상태에 반영
+    if choice in INSURERS:
+        st.session_state.insurer = choice
+        st.session_state.insurer_selected = True
+        st.session_state.overlay_until = 0
+    else:
+        st.session_state.insurer = None
+        # 처음 진입 시 오버레이 유지 (이미 지나갔으면 그대로 둠)
+        st.session_state.insurer_selected = False
+        st.session_state.setdefault("overlay_until", time.time() + 10)
+
+    # --- 이하 기존 슬라이더/버튼/설명/캡션 그대로 ---
     st.session_state.top_k = st.slider(
-        "Top-K (근거 개수)",
-        1, 10, st.session_state.top_k,
-        help="질문과 가장 유사한 문서 조각을 몇 개까지 불러올지입니다. 높을수록 더 많은 근거를 보지만 느려질 수 있습니다."
+        "Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3),
+        help="질문과 가장 유사한 문서 조각을 몇 개까지 불러올지입니다. 높을수록 느려질 수 있습니다."
     )
     st.session_state.temperature = st.slider(
-        "온도(창의성)",
-        0.0, 1.0, st.session_state.temperature, 0.05,
-        help="답변의 무작위성을 조절합니다. 0에 가까울수록 사실 위주의 안정적인 답변, 1에 가까울수록 표현이 다양해집니다."
+        "온도(창의성)", 0.0, 1.0, float(st.session_state.get("temperature", 0.3)), 0.05,
+        help="답변의 무작위성입니다. 문서 QA는 0.2~0.4 권장."
     )
     st.session_state.max_tokens = st.slider(
-        "최대 토큰",
-        128, 2048, st.session_state.max_tokens, 64,
-        help="한 번에 생성할 수 있는 최대 길이입니다. 너무 크면 비용·지연이 늘 수 있습니다."
+        "최대 토큰", 128, 2048, int(st.session_state.get("max_tokens", 512)), 64,
+        help="생성 길이 상한. 클수록 느릴 수 있어요."
     )
 
-    # 3) 액션 버튼 (사이드바로 이동)
     st.markdown("---")
     col_a, col_b = st.columns(2)
     with col_a:
@@ -87,16 +101,14 @@ with st.sidebar:
     with col_b:
         clear_clicked = st.button("🗑️ 대화 지우기", use_container_width=True)
 
-    # 4) 도움말
     with st.expander("ℹ️ 이 옵션은 뭐죠?"):
         st.markdown(
             "- **보험사**: 해당 보험사의 약관/안내문만 우선 검색합니다.\n"
-            "- **Top-K**: 검색 근거(문서 조각) 개수입니다. 3~5 권장.\n"
-            "- **온도(창의성)**: 0.2~0.4는 문서 QA에 적당합니다.\n"
-            "- **최대 토큰**: 답변 길이 상한입니다. 길수록 느릴 수 있어요."
+            "- **Top-K**: 근거 문서 조각 개수(3~5 권장).\n"
+            "- **온도**: 0=보수적, 1=창의적. 문서 QA는 0.2~0.4.\n"
+            "- **최대 토큰**: 답변 길이 상한."
         )
 
-    # 5) API_BASE 표시는 가장 아래로
     st.markdown("---")
     st.caption(f"API_BASE: {API_BASE}")
 
