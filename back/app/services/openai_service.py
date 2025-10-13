@@ -1,79 +1,218 @@
 # back/app/services/openai_service.py
+# -----------------------------------------------------------------------------
+# OpenAI API 호출 래퍼
+#  - 임베딩 생성 (embeddings.create)
+#  - 챗/완성 (chat.completions.create)
+#  - 스트리밍/비스트리밍 모두 지원
+#  - 환경변수 일원화: OPENAI_API_KEY, OPENAI_BASE_URL(또는 OPENAI_BASE), OPENAI_MODEL, OPENAI_EMBED_MODEL
+#  - 과거 호환: chat(), complete() 별칭 및 OpenAIService 클래스 제공
+# -----------------------------------------------------------------------------
+
 from __future__ import annotations
+from typing import List, Dict, Optional, Iterable, Union, Tuple, Any, Callable
 
 import os
-from typing import List, Dict, Optional
+import time
 
-from openai import OpenAI
-from app.services.rag_service import retrieve_context, init_indices
-
-# OpenAI 설정
-client = OpenAI(timeout=60.0)  # 네트워크 지연 보호
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-
-# 서버 초기화 시(임베딩/인덱스 준비). 불러만 놓고 실패해도 첫 요청 때 lazy-init됨.
 try:
-    init_indices()
-except Exception as e:
-    print(f"[OPENAI] RAG init warning: {e}")
+    from openai import OpenAI, AsyncOpenAI
+    from openai import APIError, APIConnectionError, RateLimitError
+except Exception as e:  # pragma: no cover
+    raise RuntimeError(
+        "The 'openai' package is required. Install with: pip install 'openai>=1.0.0'"
+    ) from e
 
-def _extract_user_query(messages: List[Dict[str, str]]) -> str:
-    for m in reversed(messages or []):
-        if m.get("role") == "user":
-            return m.get("content", "")
-    return ""
 
-def _build_system_prompt(context_text: str) -> str:
-    return (
-        "당신은 '보험 문서 RAG 시스템'입니다. "
-        "반드시 아래 [관련 문서 발췌]의 내용에 근거해서 한국어로 간결하고 정확하게 답하세요. "
-        "발췌가 비어 있거나 충분한 근거가 없으면 '문서에서 근거를 찾지 못했습니다'라고 답하세요.\n\n"
-        f"[관련 문서 발췌]\n{context_text}\n\n"
-        "규칙:\n"
-        "1) 문서에 명시된 사실만 사용\n"
-        "2) 추측/환상 금지\n"
-        "3) 필요한 경우 핵심 항목은 불릿으로 정리\n"
-        "4) 답변 말미에 (파일명 p.xx) 형태로 근거 표기"
-    )
+# =========================
+# 환경변수/기본값
+# =========================
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY is not set in environment/.env")
 
-def chat(
+# base URL: 우선순위 OPENAI_BASE_URL > OPENAI_BASE > (없으면 공백)
+OPENAI_BASE_URL  = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_BASE")
+
+# 모델 기본값
+DEFAULT_CHAT_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+DEFAULT_EMBED_MODEL  = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+
+# 클라이언트 생성 인자
+_client_kwargs = {"api_key": OPENAI_API_KEY}
+if OPENAI_BASE_URL:
+    _client_kwargs["base_url"] = OPENAI_BASE_URL
+
+client = OpenAI(**_client_kwargs)
+aclient = AsyncOpenAI(**_client_kwargs)  # 필요 시 async 사용
+
+
+# =========================
+# 공통 유틸
+# =========================
+def _normalize_messages(
     *,
-    messages: List[Dict[str, str]],
-    temperature: float = 0.3,
-    max_tokens: int = 512,
-    insurer: Optional[str] = None,
-    top_k: Optional[int] = 3,
+    messages: Optional[List[Dict[str, str]]] = None,
+    prompt: Optional[str] = None,
+    system: Optional[str] = None
+) -> List[Dict[str, str]]:
+    """messages가 없으면 (system, prompt)로 구성"""
+    if messages and len(messages) > 0:
+        return messages
+    msgs: List[Dict[str, str]] = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    if prompt:
+        msgs.append({"role": "user", "content": prompt})
+    if not msgs:
+        raise ValueError("Either `messages` or `prompt` must be provided.")
+    return msgs
+
+
+def _with_retries(fn: Callable[[], Any], *, retries: int = 2, backoff: float = 0.8):
+    """간단한 재시도 래퍼 (429/일시적 네트워크 에러용)"""
+    for i in range(retries + 1):
+        try:
+            return fn()
+        except (RateLimitError, APIConnectionError, APIError) as e:
+            if i >= retries:
+                raise
+            time.sleep(backoff * (2 ** i))
+
+
+# =========================
+# 임베딩: 동기/비동기
+# =========================
+def embed_texts(
+    texts: List[str],
+    *,
+    model: Optional[str] = None
+) -> List[List[float]]:
+    """
+    임베딩 생성 (동기). model 미지정 시 DEFAULT_EMBED_MODEL 사용.
+    """
+    m = model or DEFAULT_EMBED_MODEL
+    resp = _with_retries(lambda: client.embeddings.create(model=m, input=texts))
+    return [d.embedding for d in resp.data]
+
+
+async def embed_texts_async(
+    texts: List[str],
+    *,
+    model: Optional[str] = None
+) -> List[List[float]]:
+    """
+    임베딩 생성 (비동기). model 미지정 시 DEFAULT_EMBED_MODEL 사용.
+    """
+    m = model or DEFAULT_EMBED_MODEL
+    resp = await aclient.embeddings.create(model=m, input=texts)
+    return [d.embedding for d in resp.data]
+
+
+# =========================
+# 챗 콜: 동기 (스트리밍/비스트리밍)
+# =========================
+def chat_llm(
+    *,
+    messages: Optional[List[Dict[str, str]]] = None,
+    prompt: Optional[str] = None,
+    system: Optional[str] = None,
     model: Optional[str] = None,
+    temperature: float = 0.2,
+    max_tokens: int = 800,
+    stream: bool = False,
+) -> Union[str, Iterable[str]]:
+    """
+    - messages 또는 (prompt, system)로 호출
+    - stream=False: 최종 문자열 반환
+    - stream=True : 토큰 iterator[str] 반환
+    """
+    msgs = _normalize_messages(messages=messages, prompt=prompt, system=system)
+    m = model or DEFAULT_CHAT_MODEL
+
+    if stream:
+        def _gen():
+            resp = _with_retries(lambda: client.chat.completions.create(
+                model=m,
+                messages=msgs,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            ))
+            for chunk in resp:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
+        return _gen()
+
+    resp = _with_retries(lambda: client.chat.completions.create(
+        model=m,
+        messages=msgs,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    ))
+    return resp.choices[0].message.content or ""
+
+
+# =========================
+# 챗 콜: 비동기 (원하면 사용)
+# =========================
+async def chat_llm_async(
+    *,
+    messages: Optional[List[Dict[str, str]]] = None,
+    prompt: Optional[str] = None,
+    system: Optional[str] = None,
+    model: Optional[str] = None,
+    temperature: float = 0.2,
+    max_tokens: int = 800,
 ) -> str:
-    model = model or DEFAULT_MODEL
+    msgs = _normalize_messages(messages=messages, prompt=prompt, system=system)
+    m = model or DEFAULT_CHAT_MODEL
+    resp = await aclient.chat.completions.create(
+        model=m,
+        messages=msgs,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return resp.choices[0].message.content or ""
 
-    # 1) 사용자 질의
-    user_query = _extract_user_query(messages)
-    print(f"[RAG] query={user_query!r} insurer={insurer} top_k={top_k}")
 
-    # 2) 컨텍스트 검색 (SBERT + FAISS)
-    try:
-        context_text = retrieve_context(user_query, insurer=insurer, top_k=top_k) or ""
-        print(f"[RAG] context_len={len(context_text)}")
-    except Exception as e:
-        return f"문서 검색 중 오류가 발생했습니다: {e}"
+# =========================
+# 과거 호환: 함수 별칭
+# =========================
+def chat(*, messages=None, prompt=None, system=None, **kwargs):
+    return chat_llm(messages=messages, prompt=prompt, system=system, **kwargs)
 
-    if not context_text.strip():
-        return "문서에서 관련 근거를 찾지 못했습니다. 보험사 선택/Top-K/인덱스를 확인해주세요."
+def complete(*, messages=None, prompt=None, system=None, **kwargs):
+    return chat_llm(messages=messages, prompt=prompt, system=system, **kwargs)
 
-    # 3) system 프롬프트 구성 + 메시지 합치기
-    system_prompt = _build_system_prompt(context_text)
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
 
-    # 4) LLM 호출
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=full_messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
+# =========================
+# 과거 호환: 클래스 래퍼 (동기)
+#  - 기존 코드와 최대한 시그니처를 맞춤
+# =========================
+class OpenAIService:
+    """
+    과거 코드 호환용 서비스 래퍼 (동기).
+    embed(), chat() 메서드 제공.
+    """
+    def __init__(self, api_key: Optional[str] = None):
+        key = api_key or OPENAI_API_KEY
+        if not key:
+            raise RuntimeError("OPENAI_API_KEY 환경변수가 필요합니다.")
+        # 동일 전역 client를 그대로 씀
+
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        return embed_texts(texts)
+
+    def chat(self, prompt: str, max_tokens: int = 600) -> Tuple[str, Optional[Dict[str, Any]], str]:
+        system = (
+            "보험 문서(약관/요약서/청구안내)에 근거해 답하세요. "
+            "근거가 없으면 추측하지 말고 필요한 문서를 안내하세요."
         )
-        content = resp.choices[0].message.content if resp.choices else ""
-        return (content or "").strip()
-    except Exception as e:
-        return f"LLM 호출 중 오류가 발생했습니다: {e}"
+        content = chat_llm(prompt=prompt, system=system, model=DEFAULT_CHAT_MODEL, max_tokens=max_tokens)
+        # usage/model은 최신 SDK에서 resp 객체가 필요하지만, 간단 호환을 위해 None/기본값 반환
+        return content.strip(), None, DEFAULT_CHAT_MODEL
+
+    @property
+    def chat_model(self) -> str:
+        return DEFAULT_CHAT_MODEL
