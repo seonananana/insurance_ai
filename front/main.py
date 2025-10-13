@@ -97,7 +97,7 @@ with st.sidebar:
     st.markdown("---")
     col_a, col_b = st.columns(2)
     with col_a:
-        make_pdf_clicked = st.button("📄 근거 기반 PDF 생성", use_container_width=True)
+        make_pdf_clicked = st.button("📄 PDF 생성", use_container_width=True)
     with col_b:
         clear_clicked = st.button("🗑️ 대화 지우기", use_container_width=True)
 
