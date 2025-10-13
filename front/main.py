@@ -46,54 +46,39 @@ def post_json(url: str, payload: dict, timeout=(20, 180)):
 # ---------------------------
 # 사이드바 (설정 + 액션)
 # ---------------------------
-def on_change_insurer():
-    st.session_state.insurer_selected = True
-    st.session_state.overlay_until = 0
-
 with st.sidebar:
     st.subheader("⚙️ 설정")
 
-    # --- 보험사 선택 (placeholder 분리) ---
-    placeholder_label = "선택하세요…"
-    options = [placeholder_label] + INSURERS
+    # 보험사 선택: 값이 세션에 'insurer'로 직접 저장되도록 key를 통일
+    options = ["선택하세요…"] + INSURERS
+    default_idx = options.index(st.session_state.insurer) if st.session_state.insurer in options else 0
 
-    # 현재 상태에 따라 인덱스 안전하게 계산
-    current = st.session_state.get("insurer")
-    if current in INSURERS:
-        idx = options.index(current)
-    else:
-        idx = 0  # 기본값 (placeholder)
-
-    # Streamlit selectbox 호출
-    choice = st.selectbox(
+    st.selectbox(
         "보험사",
         options,
-        index=min(max(idx, 0), len(options) - 1),  # index 항상 유효 범위 보정
-        key="insurer_select",
+        index=default_idx,
+        key="insurer",  # ✅ 선택값이 곧 st.session_state.insurer
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
-    # 선택 결과 반영
-    if choice in INSURERS:
-        st.session_state.insurer = choice
-        st.session_state.insurer_selected = True
+    #衍생 상태: 선택 여부 / 오버레이 타이머
+    st.session_state.insurer_selected = st.session_state.insurer in INSURERS
+    if st.session_state.insurer_selected:
         st.session_state.overlay_until = 0
     else:
-        st.session_state.insurer = None
-        st.session_state.insurer_selected = False
         st.session_state.setdefault("overlay_until", time.time() + 10)
-        
-    # --- 이하 기존 슬라이더/버튼/설명/캡션 그대로 ---
+
+    # --- 이하 기존 슬라이더/버튼은 그대로 ---
     st.session_state.top_k = st.slider(
         "Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3),
         help="질문과 가장 유사한 문서 조각을 몇 개까지 불러올지입니다. 높을수록 느려질 수 있습니다."
     )
     st.session_state.temperature = st.slider(
-        "온도(창의성)", 0.0, 1.0, float(st.session_state.get("temperature", 0.3)), 0.05,
+        "온도(창의성)", 0.0, 1.0, float(st.session_state.get("temperature", DEFAULT_TEMP)), 0.05,
         help="답변의 무작위성입니다. 문서 QA는 0.2~0.4 권장."
     )
     st.session_state.max_tokens = st.slider(
-        "최대 토큰", 128, 2048, int(st.session_state.get("max_tokens", 512)), 64,
+        "최대 토큰", 128, 2048, int(st.session_state.get("max_tokens", DEFAULT_MAXTOK)), 64,
         help="생성 길이 상한. 클수록 느릴 수 있어요."
     )
 
