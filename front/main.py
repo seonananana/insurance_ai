@@ -57,29 +57,32 @@ with st.sidebar:
     placeholder_label = "선택하세요…"
     options = [placeholder_label] + INSURERS
 
-    # 현재 상태를 options 인덱스로 환산 (없으면 0 = placeholder)
+    # 현재 상태에 따라 인덱스 안전하게 계산
     current = st.session_state.get("insurer")
-    idx = options.index(current) + 1 if current in INSURERS else 0
+    if current in INSURERS:
+        idx = options.index(current)
+    else:
+        idx = 0  # 기본값 (placeholder)
 
+    # Streamlit selectbox 호출
     choice = st.selectbox(
         "보험사",
         options,
-        index=idx,
+        index=min(max(idx, 0), len(options) - 1),  # index 항상 유효 범위 보정
         key="insurer_select",
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
-    # 선택 결과를 세션 상태에 반영
+    # 선택 결과 반영
     if choice in INSURERS:
         st.session_state.insurer = choice
         st.session_state.insurer_selected = True
         st.session_state.overlay_until = 0
     else:
         st.session_state.insurer = None
-        # 처음 진입 시 오버레이 유지 (이미 지나갔으면 그대로 둠)
         st.session_state.insurer_selected = False
         st.session_state.setdefault("overlay_until", time.time() + 10)
-
+        
     # --- 이하 기존 슬라이더/버튼/설명/캡션 그대로 ---
     st.session_state.top_k = st.slider(
         "Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3),
