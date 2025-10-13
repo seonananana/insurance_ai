@@ -29,4 +29,13 @@ front/.streamlit/state.json
 .ipynb_checkpoints/
 
 # ---- Node (if any) ----
-node_modules/
+node_modules/back/.env
+front/.streamlit/secrets.toml
+back/.venv/
+back/models/
+*.safetensors
+back/models/
+*.safetensors
+back/.venv/
+back/.env
+front/.streamlit/secrets.toml

@@ -13,10 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.rag_service import retrieve_context
-try:
-    from app.services.openai_service import chat_llm as _chat_llm
-except ImportError:  # 함수명이 chat 인 프로젝트 대응
-    from app.services.openai_service import chat as _chat_llm
+from app.services.openai_service import chat_llm  # /chat/completion에서 쓰던 동일 함수 사용
 
 router = APIRouter(tags=["qa"])
 
