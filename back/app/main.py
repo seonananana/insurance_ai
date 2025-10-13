@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.routers import health, qa, chat
+from app.routers import health, qa, chat, report
 
 try:
     from app.routers import report          # /qa/... (report.py 내부 prefix="/qa")
@@ -42,6 +42,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/health", tags=["health"])  # health는 내부 prefix 없음 → 여기서 부여
 app.include_router(qa.router,     prefix="/qa",     tags=["qa"])      # qa.py는 내부 prefix 없음 → 여기서 부여
 app.include_router(chat.router)                                        # chat.py는 내부 prefix="/chat" 이미 있음
+app.include_router(report.router)
 
 if chatlog is not None:
     app.include_router(chatlog.router)                                 # chatlog.py 내부 prefix="/chat"
