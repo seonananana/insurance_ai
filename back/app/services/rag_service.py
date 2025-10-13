@@ -94,6 +94,7 @@ def search_top_k(
 # 공개 API: retrieve_context (하위호환 프록시)
 #   - 외부에서 이 경로를 이미 임포트하고 있다면 깨지 않도록 유지
 # ─────────────────────────────────────────────────────────────
-def retrieve_context(db: Session, query_vec: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+def retrieve_context(db: Session, query_vec: List[float], top_k: int = 5, **kwargs) -> List[Dict[str, Any]]:
     """기존 시그니처 호환용 프록시"""
     return retrieve_context_base(db, query_vec, top_k=top_k)
+
