@@ -24,48 +24,44 @@ inject_css("""
 html, body, [class*="stApp"] { font-family: 'Noto Sans KR', system-ui, -apple-system, sans-serif; }
 h1, h2, h3 { letter-spacing: -0.3px; }
 
-/* 페이지 컨테이너 폭 (헤더/디바이더/입력창 동일) */
+/* 페이지 컨테이너 폭 (헤더/디바이더/입력창 동일 기준) */
 div.block-container { max-width: 1000px; padding-top: 18px; }
 
 /* 사이드바 */
 section[data-testid="stSidebar"] { width: 320px !important; }
 section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 12px; }
 
-/* 헤더 카드: 파란 배경 + 흰 글자 + 컨테이너 가득 채우기 */
+/* --- 핵심: 헤더가 콘텐츠 폭 전체를 정확히 채우도록 --- */
+/* 스트림릿이 마크다운을 감싸는 래퍼 폭 제한을 해제 */
+div[data-testid="stMarkdownContainer"] { width:100% !important; max-width:100% !important; }
+/* 메인 세로 블록의 즉시 자식들도 항상 전체 폭을 쓰게 */
+div[data-testid="stVerticalBlock"] > div { width:100% !important; }
+
+/* 헤더 카드: 파란 배경 + 흰 글자 + 전체폭 + 패딩 포함 계산 */
 .page-hero{
-  display:block;           /* ✅ 블록 요소로 강제 */
-  width:100% !important;   /* ✅ 컨테이너 전체 폭 */
+  display:block;
+  width:100% !important;
+  box-sizing:border-box;          /* ✅ 패딩을 폭에 포함 */
   background:#2563EB; color:#fff;
   padding:22px 24px; border-radius:16px;
   font-weight:800; font-size:34px; letter-spacing:-0.3px;
   margin-bottom:12px;
 }
 
-/* 헤더 아래 구분선(컨테이너 전체) */
+/* 헤더 아래 구분선(컨테이너 전체폭) */
 hr.page-divider{
-  border:none; height:1px; background:#E5E7EB; margin:18px 0 12px;
+  border:none; height:1px; background:#E5E7EB;
+  margin:18px 0 12px;
 }
 
-/* 페이지 컨테이너 폭(헤더/구분선/입력창 동일 기준) */
-div.block-container{ max-width:1000px; padding-top:18px; }
-
-/* 입력창: 컨테이너 폭과 정확히 맞춤 + 고정 */
-div[data-testid="stChatInput"]{
-  position: sticky; bottom:0; z-index:5;
-  background:rgba(255,255,255,0.92); backdrop-filter:saturate(1.8) blur(6px);
-  border-top:1px solid #eee;
-  width:100% !important;
-  margin-left:0 !important; margin-right:0 !important;
-  padding-left:0 !important; padding-right:0 !important;
+/* 채팅 버블(카드 느낌) */
+div[data-testid="stChatMessage"]{
+  border:1px solid #eee; border-radius:16px; padding:10px 14px; margin:8px 0;
+  box-shadow:0 2px 10px rgba(0,0,0,0.04); background:#fff;
 }
-/* 내부 래퍼들이 걸어둔 max-width 해제 */
-div[data-testid="stChatInput"] form,
-div[data-testid="stChatInput"] > div,
-div[data-testid="stChatInput"] > div > div{
-  width:100% !important; max-width:100% !important;
-}
+div[data-testid="stChatMessage"] pre { background:#f7f8fb; }
 
-/* 입력창: 컨테이너 폭과 정확히 맞춤 + 고정 */
+/* --- 핵심: 입력창 폭 = 헤더/구분선 폭과 정확히 일치 --- */
 div[data-testid="stChatInput"]{
   position: sticky; bottom: 0; z-index: 5;
   background: rgba(255,255,255,0.92);
@@ -73,8 +69,12 @@ div[data-testid="stChatInput"]{
   border-top: 1px solid #eee;
   width: 100% !important;
   margin-left: 0 !important; margin-right: 0 !important;
+  padding-left: 0 !important; padding-right: 0 !important;
 }
-div[data-testid="stChatInput"] > div{
+/* 내부 래퍼들이 가진 max-width 제한 해제 */
+div[data-testid="stChatInput"] form,
+div[data-testid="stChatInput"] > div,
+div[data-testid="stChatInput"] > div > div{
   width: 100% !important; max-width: 100% !important;
 }
 
