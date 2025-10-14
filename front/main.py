@@ -56,7 +56,7 @@ div[data-testid="stChatMessage"]{
 }
 div[data-testid="stChatMessage"] pre { background:#f7f8fb; }
 
-/* ====== 입력창 폭 정렬 + 왼쪽 이모지 제거 ====== */
+/* ====== 입력창 폭 정렬 + 왼쪽 아이콘 제거 후, 오른쪽으로 이동 ====== */
 div[data-testid="stChatInput"]{
   position: sticky; bottom: 0; z-index: 5;
   background: rgba(255,255,255,0.92);
@@ -66,20 +66,40 @@ div[data-testid="stChatInput"]{
   margin-left:0 !important; margin-right:0 !important;
   padding-left:0 !important; padding-right:0 !important;
 }
+
 /* 내부 래퍼 최대폭 해제 */
 div[data-testid="stChatInput"] form,
 div[data-testid="stChatInput"] > div,
 div[data-testid="stChatInput"] > div > div{
   width:100% !important; max-width:100% !important;
 }
-/* 왼쪽 prefix 아이콘/이모지 숨김 (버튼 아이콘은 살림) */
-div[data-testid="stChatInput"] form svg { display:none !important; }
-div[data-testid="stChatInput"] form [role="img"] { display:none !important; }
-div[data-testid="stChatInput"] form button svg { display:inline-block !important; }
-/* 아이콘 자리로 생긴 여백 보정 */
+
+/* 폼을 기준으로 커스텀 아이콘 배치 */
+div[data-testid="stChatInput"] form{ position:relative; }
+
+/* (1) 왼쪽 기본 이모지/아이콘 전부 숨김 — 전송버튼 아이콘은 그대로 둠 */
+div[data-testid="stChatInput"] form > svg,
+div[data-testid="stChatInput"] form [role="img"]{
+  opacity:0 !important; width:0 !important; height:0 !important;
+  margin:0 !important; pointer-events:none !important;
+}
+
+/* (2) 오른쪽(전송 버튼 왼쪽)에 커스텀 이모지 표시 */
+div[data-testid="stChatInput"] form::after{
+  content: "💬";                    /* ← 원하는 이모지로 바꿔도 됨 */
+  position:absolute;
+  right: 52px;                      /* 전송버튼과 간격 */
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  opacity: .85;
+}
+
+/* (3) 이모지 들어갈 공간만큼 우측 패딩 확보 */
 div[data-testid="stChatInput"] textarea,
 div[data-testid="stChatInput"] input[type="text"]{
-  padding-left:12px !important;
+  padding-right: 72px !important;   /* 버튼+이모지 여유 */
+  padding-left: 12px !important;
 }
 
 /* 둥근 버튼 */
