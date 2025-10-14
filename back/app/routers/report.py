@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.db import get_db
 from app.services.embeddings_factory import get_embeddings_client
 from functools import lru_cache
-from app.services.rag_service import search_top_k
+from app.services.rag_service import retrieve_context as search_top_k
 from app.services.openai_service import chat as openai_chat
 from app.services.pdf_report import build_pdf
 
