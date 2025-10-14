@@ -21,6 +21,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
+from reportlab.pdfbase.ttfonts import TTFont
 
 try:
     from app.routers import report          # /qa/... (report.py 내부 prefix="/qa")
@@ -30,6 +31,49 @@ try:
     from app.routers import chatlog         # /chat/log (chatlog.py 내부 prefix="/chat")
 except Exception:
     chatlog = None
+
+def _register_kopub_from_back_root() -> str | None:
+    """
+    back/ 바로 아래에 둔 KoPubWorld Dotum Light.ttf 를 등록.
+    Bold 파일이 없으면 Light를 Bold로도 등록해 사용.
+    """
+    back_root = Path(__file__).resolve().parent.parent  # .../back
+    # 파일명 여러 케이스 대응
+    regular_candidates = [
+        back_root / "KoPubWorld Dotum Light.ttf",
+        back_root / "KoPubWorldDotum-Light.ttf",
+        back_root / "KoPubWorld_Dotum_Light.ttf",
+    ]
+    bold_candidates = [
+        back_root / "KoPubWorld Dotum Bold.ttf",
+        back_root / "KoPubWorldDotum-Bold.ttf",
+        back_root / "KoPubWorld_Dotum_Bold.ttf",
+    ]
+
+    reg = next((p for p in regular_candidates if p.exists()), None)
+    if not reg:
+        return None
+
+    pdfmetrics.registerFont(TTFont("KoPubDotum", str(reg)))
+
+    bold = next((p for p in bold_candidates if p.exists()), None)
+    if bold and bold.exists():
+        pdfmetrics.registerFont(TTFont("KoPubDotum-Bold", str(bold)))
+    else:
+        # Bold 파일 없으면 Light를 Bold 이름으로도 등록(두께는 같지만 코드 깨지지 않음)
+        pdfmetrics.registerFont(TTFont("KoPubDotum-Bold", str(reg)))
+
+    pdfmetrics.registerFontFamily(
+        "KoPubDotum",
+        normal="KoPubDotum",
+        bold="KoPubDotum-Bold",
+        italic="KoPubDotum",
+        boldItalic="KoPubDotum-Bold",
+    )
+    return "KoPubDotum"
+
+# 한글 기본 폰트 패밀리명
+_KR_FONT = _register_kopub_from_back_root() or "Helvetica"
 
 app = FastAPI(title="Insurance RAG API", version="0.3.0")
 
