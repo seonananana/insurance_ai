@@ -230,6 +230,6 @@ user_text = st.chat_input(f"[{ss.insurer}] 질문을 입력하고 Enter를 누�
 if user_text:
     send_chat(user_text); st.rerun()
 if make_pdf:
-    send_pdf_from_last(); st.rerun()
+    send_pdf_from_last()
 if clear_chat:
     ss.messages_by_insurer[ss.insurer] = []; st.rerun()
