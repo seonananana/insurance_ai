@@ -3,12 +3,16 @@
 
 import os
 from pathlib import Path
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
 from app.routers import health, qa, chat, report
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from textwrap import wrap
 
 try:
     from app.routers import report          # /qa/... (report.py 내부 prefix="/qa")
@@ -52,3 +56,31 @@ if report is not None:
 @app.get("/")
 def root():
     return {"ok": True, "service": "Insurance RAG API"}
+    
+class PdfPayload(BaseModel):
+    title: str = "응답"
+    content: str  # PDF로 내릴 본문 텍스트
+
+@app.post("/export/pdf")
+def export_pdf(payload: PdfPayload):
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    x, y = 40, height - 50
+    c.setTitle(payload.title)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(x, y, payload.title)
+    y -= 24
+    c.setFont("Helvetica", 11)
+    for line in payload.content.splitlines() or ["(빈 문서)"]:
+        for w in wrap(line, 90):
+            c.drawString(x, y, w)
+            y -= 16
+            if y < 40:
+                c.showPage()
+                c.setFont("Helvetica", 11)
+                y = height - 50
+    c.save()
+    buf.seek(0)
+    headers = {"Content-Disposition": 'attachment; filename="answer.pdf"'}
+    return StreamingResponse(buf, media_type="application/pdf", headers=headers)
