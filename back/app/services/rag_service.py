@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Union
 import re
 from contextlib import contextmanager
+import os
 
 from sqlalchemy.orm import Session
 from app.services.vector_search import retrieve_context_base
-import os
 from app.services.embeddings_sbert import SBertEmbeddings
 
 # DB 세션 스코프
@@ -19,17 +19,17 @@ def _session_scope() -> Session:
     finally:
         s.close()
 
-
 # 전역 싱글톤: SBertEmbeddings 인스턴스
-_EMBEDDER = None
+_EMBEDDER: Optional[SBertEmbeddings] = None
 def _get_embedder() -> SBertEmbeddings:
-   global _EMBEDDER
-   if _EMBEDDER is None:
+    global _EMBEDDER
+    if _EMBEDDER is None:
         model_dir = os.getenv("SBERT_MODEL_DIR") or os.getenv("SBERT_MODEL_NAME", "intfloat/e5-base-v2")
         device = os.getenv("EMBED_DEVICE", "cpu")
         # use_e5_prefix=None → 자동감지(e5/bge면 prefix 사용)
         _EMBEDDER = SBertEmbeddings(model_dir, use_e5_prefix=None, device=device, normalize=True)
-   return _EMBEDDER
+    return _EMBEDDER
+
 # ─────────────────────────────────────────────────────────────
 # 보험사명 정규화
 # ─────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ def _format_blocks(hits: List[Dict[str, Any]]) -> str:
     # 라우터에서 split 하는 구분자
     return "\n\n---\n\n".join(blocks)
 
-# 상위 후보 뽑기 + 보험사 필터
+# 상위 후보 뽑기 + 보험사 필터 (내부용)
 def _search_top_k(
     db: Session,
     query_vec: Sequence[float],
@@ -81,6 +81,16 @@ def _search_top_k(
     if not hits:
         hits = [h for h in raw_hits if _norm_insurer(h.get("policy_type")) == "공통"]
     return hits[:top_k]
+
+# 🔧 과거 호환용 공개 함수: 리스트[dict] 반환 (외부 모듈이 import 하던 심볼 복원)
+def search_top_k(
+    db: Session,
+    query_vec: Sequence[float],
+    insurer: Optional[str] = None,
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Backward-compatible public API: return raw hits (list of dicts)."""
+    return _search_top_k(db, query_vec, insurer=insurer, top_k=top_k)
 
 # ─────────────────────────────────────────────────────────────
 # 공개 API: retrieve_context (폴리모픽) → 문자열 컨텍스트 반환
@@ -115,3 +125,6 @@ def retrieve_context(
         "A) retrieve_context(question: str, insurer: Optional[str]=None, top_k:int=5) 또는 "
         "B) retrieve_context(db: Session, query_vec: Sequence[float], *, insurer: Optional[str]=None, top_k:int=5)"
     )
+
+# 공개 심볼
+__all__ = ["retrieve_context", "search_top_k"]
