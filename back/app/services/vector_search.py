@@ -11,7 +11,7 @@ def retrieve_context_base(db: Session, query_vec: List[float], top_k: int = 20) 
         SELECT
           doc_id, chunk_id, policy_type, clause_title, content,
           COALESCE(file_name, doc_id) AS file_name,
-          COALESCE(page, page_no)     AS page,
+          page                        AS page,
           1 - (embedding <=> (:qvec)::vector) AS score
         FROM document_chunks
         ORDER BY embedding <=> (:qvec)::vector
