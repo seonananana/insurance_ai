@@ -14,17 +14,18 @@ from app.services.rag_service import search_top_k
 from app.services.openai_service import chat as openai_chat
 from app.services.pdf_report import build_pdf
 
+# --------- settings ---------
 FILES_DIR = os.getenv("FILES_DIR", "files")
 os.makedirs(FILES_DIR, exist_ok=True)
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
-# ⚠️ 기존: _emb = get_embeddings_client()  (부팅 시점 실패 원인)
-# ✅ 변경: 필요할 때 한 번만 생성되는 지연 로딩
+# ✅ 지연 로딩: 첫 요청에서만 임베딩 모델 로드 (부팅 시점 에러 방지)
 @lru_cache
-def _emb():
+def get_emb():
     return get_embeddings_client()
 
+# --------- schemas ----------
 class AnswerPdfRequest(BaseModel):
     conv_id: Optional[str] = None        # conv가 있으면 최신 user 질문 사용
     question: Optional[str] = None       # 없으면 단일 질문으로 생성
@@ -37,6 +38,7 @@ class AnswerPdfResponse(BaseModel):
     sources: List[Dict[str, Any]]
     pdf_url: str
 
+# --------- helpers ----------
 def _load_history(db: Session, conv_id: str) -> List[Dict[str,str]]:
     rows = db.execute(
         text("""SELECT role, content
@@ -52,9 +54,11 @@ def _calc_confidence(scores: List[float]) -> int:
     avg = sum(scores) / len(scores)
     return max(0, min(100, int(avg * 100)))
 
+# --------- endpoint ----------
 @router.post("/answer_pdf", response_model=AnswerPdfResponse)
 def answer_pdf(req: AnswerPdfRequest, db: Session = Depends(get_db)):
     try:
+        # 0) 질문 확보 (단일 question 우선, 없으면 conv_id에서 최근 user 메시지)
         question = (req.question or "").strip()
         history: List[Dict[str,str]] = []
         if not question and req.conv_id:
@@ -66,26 +70,22 @@ def answer_pdf(req: AnswerPdfRequest, db: Session = Depends(get_db)):
         if not question:
             raise HTTPException(status_code=400, detail="질문이 없습니다. conv_id 또는 question 중 하나는 필요합니다.")
 
-        # (1) 임베딩 + 검색  ▶ 문제 시에도 PDF는 생성되도록 폴백
-        hits: List[Dict[str, Any]] = []
-        scores: List[float] = []
-        reason_note = None
-        try:
-            qvec = _emb().embed([question])[0]  # ✅ 지연 로딩
-            hits = search_top_k(db, query_vec=qvec, policy_type=req.policy_type, top_k=req.top_k)
-            for h in hits:
-                s = h.get("score")
-                if isinstance(s, (int, float)):
-                    scores.append(float(s))
-        except Exception as e:
-            # 임베딩/검색이 안 돼도 PDF는 생성되게 함
-            hits, scores = [], []
-            reason_note = f"임베딩/검색 폴백: {e}"
+        # 1) 임베딩 & 검색 (요청 시 실제 임베딩 수행)
+        qvec = get_emb().embed([question])[0]
+        hits = search_top_k(db, query_vec=qvec, policy_type=req.policy_type, top_k=req.top_k)
 
-        # (2) 프롬프트
-        contexts = [(h.get("content") or "").strip() for h in hits if (h.get("content") or "").strip()]
+        contexts, scores = [], []
+        for h in hits:
+            c = (h.get("content") or "").strip()
+            if c: contexts.append(c)
+            s = h.get("score")
+            if isinstance(s, (int, float)):
+                scores.append(float(s))
         context_block = "\n\n---\n".join(contexts) if contexts else "관련 문서가 충분하지 않습니다."
-        sys = "당신은 보험 문서 안내 전문가입니다. 반드시 제공된 근거(context) 범위 내에서만 답하세요. 근거가 없으면 '근거 부족'이라고 답하세요."
+
+        # 2) 프롬프트 구성 & LLM 호출
+        sys = ("당신은 보험 문서 안내 전문가입니다. 반드시 제공된 근거(context) 범위 내에서만 답하세요. "
+               "근거가 없으면 '근거 부족'이라고 답하세요.")
         convo_prefix = "\n".join([f"{m['role']}: {m['content']}" for m in history[-10:]]) if history else ""
         prompt = f"""[대화 일부]
 {convo_prefix}
@@ -101,26 +101,26 @@ def answer_pdf(req: AnswerPdfRequest, db: Session = Depends(get_db)):
 - 목록은 불릿으로
 - 근거가 없으면 추측 금지
 """
-
         answer = openai_chat(
-            messages=[{"role":"system","content":sys},
-                      {"role":"user","content":prompt}],
+            messages=[{"role": "system", "content": sys},
+                      {"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=req.max_tokens,
         )
 
-        # (3) 적합성/신뢰도 산정
+        # 3) 적합성/신뢰도 계산
         confidence = _calc_confidence(scores)
-        if confidence >= 70:   fitness, reason = "ok",    "상위 근거와 일치도가 충분"
-        elif confidence >= 40: fitness, reason = "check", "일부 항목 확인 필요"
-        else:                  fitness, reason = "lack",  "근거 부족"
-        if reason_note:
-            reason = f"{reason} · {reason_note}"
+        if confidence >= 70:
+            fitness, reason = "ok", "상위 근거와 일치도가 충분"
+        elif confidence >= 40:
+            fitness, reason = "check", "일부 항목 확인 필요"
+        else:
+            fitness, reason = "lack", "근거 부족"
 
         required_docs = [k for k in ["진단서","영수증","신분증","청구서","처방전","계좌사본"] if k in answer]
         timeline = ["D+0 접수", "D+3 추가서류 확인", "D+7 지급"]
 
-        # (4) PDF 저장
+        # 4) PDF 생성 (디스크 저장)
         pdf_id = str(uuid.uuid4())[:8]
         pdf_path = os.path.join(FILES_DIR, f"answer_{pdf_id}.pdf")
         build_pdf({
@@ -137,7 +137,7 @@ def answer_pdf(req: AnswerPdfRequest, db: Session = Depends(get_db)):
             "links": {},
         }, pdf_path)
 
-        # (5) 응답
+        # 5) 응답
         sources = [{
             "doc_id": h.get("doc_id"),
             "chunk_id": h.get("chunk_id"),
@@ -151,7 +151,9 @@ def answer_pdf(req: AnswerPdfRequest, db: Session = Depends(get_db)):
             sources=sources,
             pdf_url=f"/files/{os.path.basename(pdf_path)}",
         )
+
     except HTTPException:
         raise
     except Exception as e:
+        # 임베딩/검색/LLM 어떤 단계든 실패 시 500 반환
         raise HTTPException(status_code=500, detail=f"answer_pdf failed: {e}")
