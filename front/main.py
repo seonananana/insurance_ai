@@ -53,7 +53,6 @@ with st.sidebar:
     def _on_insurer_changed():
         st.session_state.insurer_selected = st.session_state.insurer in INSURERS
         st.session_state.overlay_until = 0 if st.session_state.insurer_selected else time.time() + 10
-        st.rerun()  # ✅ 선택 즉시 다시 실행 → 오버레이 해제 & 입력창 활성화가 곧바로 반영
 
     options = ["선택하세요…"] + INSURERS
     default_idx = options.index(st.session_state.insurer) if st.session_state.insurer in options else 0
@@ -231,7 +230,6 @@ if user_input:
         st.warning("먼저 보험사를 선택해 주세요.")
     else:
         send_normal_chat(user_input)
-        st.rerun()   # ✅ 전송 직후 즉시 렌더링 재실행
 
 # 사이드바 버튼 처리
 if 'make_pdf_clicked' in locals() and make_pdf_clicked:
