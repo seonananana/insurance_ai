@@ -167,97 +167,63 @@ def send_chat(t):
     log.append({"role":"assistant","content": (data or {}).get("reply") or "⚠️ 빈 응답입니다."})
 
 def send_pdf_from_last():
-    log = _msgs()
-    # 1) 마지막 assistant 답변을 찾는다.
-    last_answer = next((m["content"] for m in reversed(log) if m["role"] == "assistant"), None)
-    if not last_answer:
+    """
+    마지막 assistant 답변을 /export/pdf 로 보내 PDF를 받고,
+    그 자리에서 즉시 다운로드 버튼을 띄운다.
+    (CSS/레이아웃 안 건드림)
+    """
+    import os, requests, streamlit as st
+
+    # API_BASE: 네 코드 전역에 있으면 그걸 쓰고, 없으면 기본값
+    API = globals().get("API_BASE") or os.environ.get("API_BASE", "http://localhost:8000")
+
+    # 마지막 assistant 메시지 찾기 (_msgs()가 있으면 사용, 없으면 session_state.messages 사용)
+    try:
+        msgs = _msgs()  # 네 파일에 이미 있을 가능성 높음
+    except NameError:
+        msgs = st.session_state.get("messages", [])
+    last_answer = ""
+    for m in reversed(msgs or []):
+        role = (m.get("role") or m.get("speaker") or "").lower()
+        if role in ("assistant", "ai", "bot"):
+            last_answer = m.get("content", "")
+            break
+
+    if not last_answer.strip():
         with st.chat_message("assistant"):
             st.warning("먼저 질문하고 답변을 생성하세요.")
         return
 
-    # 2) 1순위: 백엔드 바이너리 PDF 엔드포인트(/export/pdf) 호출
+    # 백엔드에 PDF 생성 요청
     try:
-        url = f"{API_BASE}/export/pdf".rstrip("/")
-        res = requests.post(url, json={"title": "상담 결과", "content": last_answer}, timeout=60)
-        if res.status_code != 404:
-            res.raise_for_status()
-            with st.chat_message("assistant"):
-                st.success("PDF가 생성되었습니다. 아래에서 다운로드하세요.")
-                st.download_button(
-                    "⬇️ 다운로드",
-                    data=res.content,
-                    file_name="answer.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                    use_container_width=True,
-                )
-            return
+        resp = requests.post(
+            f"{API.rstrip('/')}/export/pdf",
+            json={"title": "상담 결과", "content": last_answer},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        pdf_bytes = resp.content or b""
     except requests.RequestException as e:
-        # 다음 단계로 폴백
-        pass
-
-    # 3) 2순위: 기존 방식(서버가 PDF URL을 반환하는 경우)
-    data, err = _post(
-        f"{API_BASE}/chat/completion",
-        {
-            "messages": [{"role": "user", "content": last_answer}],
-            "insurer": ss.insurer,
-            "top_k": int(ss.top_k),
-            "temperature": float(ss.temperature),
-            "max_tokens": int(ss.max_tokens),
-            "pdf": True,
-        },
-        timeout=(20, 300),
-    )
-    if not err:
-        with st.chat_message("assistant"):
-            st.markdown((data or {}).get("reply") or "⚠️ 빈 응답입니다.")
-            pdf_url = (data or {}).get("pdf", {}).get("url")
-            if pdf_url:
-                href = pdf_url if not pdf_url.startswith("/") else f"{API_BASE}{pdf_url}"
-                st.link_button("📄 PDF 열기", href, use_container_width=True)
-                return
-
-    # 4) 3순위: 프론트에서 로컬로 PDF 생성 (reportlab)
-    try:
-        from io import BytesIO
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4
-        from textwrap import wrap
-
-        buf = BytesIO()
-        c = canvas.Canvas(buf, pagesize=A4)
-        w, h = A4
-        x, y = 40, h - 50
-        c.setTitle("상담 결과")
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(x, y, "상담 결과")
-        y -= 24
-        c.setFont("Helvetica", 11)
-        for line in (last_answer or "(내용 없음)").splitlines():
-            for seg in wrap(line, 90):
-                c.drawString(x, y, seg)
-                y -= 16
-                if y < 40:
-                    c.showPage()
-                    c.setFont("Helvetica", 11)
-                    y = h - 50
-        c.save()
-        buf.seek(0)
-
-        with st.chat_message("assistant"):
-            st.success("PDF를 로컬에서 생성했습니다. 아래에서 다운로드하세요.")
-            st.download_button(
-                "⬇️ 다운로드",
-                data=buf.getvalue(),
-                file_name="answer.pdf",
-                mime="application/pdf",
-                type="primary",
-                use_container_width=True,
-            )
-    except Exception as e:
         with st.chat_message("assistant"):
             st.error(f"PDF 생성 실패: {e}")
+        return
+
+    if not pdf_bytes:
+        with st.chat_message("assistant"):
+            st.error("PDF가 비어 있습니다. 서버 응답을 확인하세요.")
+        return
+
+    # 여기서 즉시 다운로드 버튼 표기 (리런되더라도 이번 런에서는 보임)
+    with st.chat_message("assistant"):
+        st.success("PDF가 생성되었습니다. 아래에서 내려받기 하세요.")
+        st.download_button(
+            label="⬇️ 다운로드",
+            data=pdf_bytes,
+            file_name="answer.pdf",
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True,
+        )
 
 # ===================== 입력 / 액션 =====================
 user_text = st.chat_input(f"[{ss.insurer}] 질문을 입력하고 Enter를 누르세요…", disabled=not bool(ss.insurer))
