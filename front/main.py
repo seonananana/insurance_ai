@@ -101,12 +101,35 @@ div[data-testid="stChatInput"] form{
   box-shadow: none !important;
 }
 
-/* 왼쪽 아이콘(이모지/첨부) 제거 */
+/* ✅ 왼쪽 이모지/첨부 아이콘만 숨김 (label 내부만 타겟) */
 div[data-testid="stChatInput"] label svg,
-div[data-testid="stChatInput"] [role="img"],
-div[data-testid="stChatInput"] [data-testid*="icon"]{
-  width:0 !important; height:0 !important; opacity:0 !important;
-  visibility:hidden !important; pointer-events:none !important; margin:0 !important;
+div[data-testid="stChatInput"] label [role="img"],
+div[data-testid="stChatInput"] label [data-testid*="icon"]{
+  display:none !important;
+  width:0 !important; height:0 !important;
+  opacity:0 !important; visibility:hidden !important;
+  pointer-events:none !important; margin:0 !important;
+}
+
+/* ✅ 전송 버튼은 정상 표시 + 가운데 정렬 + 크기 고정 */
+div[data-testid="stChatInput"] form button{
+  position:absolute;                /* (이미 사용 중이면 유지) */
+  right: calc(var(--page-pad) + var(--btn-gap));
+  top:50%; transform: translateY(-50%);
+  width: var(--btn-size); height: var(--btn-size);
+  padding:0; border-radius:10px;
+
+  display:flex; align-items:center; justify-content:center; /* ← 아이콘 가운데 정렬 */
+}
+
+/* ✅ 전송 버튼 아이콘 복구(크기/가시성) */
+div[data-testid="stChatInput"] form button svg,
+div[data-testid="stChatInput"] form button [role="img"]{
+  width: 18px !important;
+  height: 18px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: inline-block !important;
 }
 
 /* 폼 기준 배치 */
