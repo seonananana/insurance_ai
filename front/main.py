@@ -20,16 +20,10 @@ DEFAULT_MAXTOK = 512
 def ensure_state():
     ss = st.session_state
     ss.setdefault("messages", [])           # [{"role":..., "content":..., "meta":{...}}]
-    ss.setdefault("insurer", None)          # 처음엔 None -> 선택 유도
+    ss.setdefault("insurer", None)          # 선택값을 여기에 '직접' 저장
     ss.setdefault("top_k", 3)
     ss.setdefault("temperature", DEFAULT_TEMP)
     ss.setdefault("max_tokens", DEFAULT_MAXTOK)
-    ss.setdefault("insurer_selected", False)
-    # 오버레이 타이머: 보험사 선택을 아직 안 눌렀다면 10초 노출
-    if not ss["insurer_selected"]:
-        ss.setdefault("overlay_until", time.time() + 10)
-    else:
-        ss["overlay_until"] = 0
 ensure_state()
 
 # ---------------------------
@@ -49,32 +43,18 @@ def post_json(url: str, payload: dict, timeout=(20, 180)):
 with st.sidebar:
     st.subheader("⚙️ 설정")
 
-    # 선택 직후 즉시 UI 갱신되게 on_change에서 rerun
-    def _on_insurer_changed():
-        st.session_state.insurer_selected = st.session_state.insurer in INSURERS
-        st.session_state.overlay_until = 0 if st.session_state.insurer_selected else time.time() + 10
-
+    # 보험사 선택: key='insurer' 로 세션에 직접 저장
     options = ["선택하세요…"] + INSURERS
     default_idx = options.index(st.session_state.insurer) if st.session_state.insurer in options else 0
-
-    # ✅ key를 'insurer'로 통일해 세션에 직접 저장
     st.selectbox(
         "보험사",
         options,
         index=default_idx,
         key="insurer",
-        on_change=_on_insurer_changed,
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
-    #衍生 상태(보험사 선택 여부) 갱신
-    st.session_state.insurer_selected = st.session_state.insurer in INSURERS
-    if st.session_state.insurer_selected:
-        st.session_state.overlay_until = 0
-    else:
-        st.session_state.setdefault("overlay_until", time.time() + 10)
-
-    # --- 이하 기존 슬라이더/버튼/설명/캡션 그대로 ---
+    # 슬라이더/버튼
     st.session_state.top_k = st.slider(
         "Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3),
         help="질문과 가장 유사한 문서 조각을 몇 개까지 불러올지입니다. 높을수록 느려질 수 있습니다."
@@ -113,7 +93,7 @@ st.title("보험 문서 RAG 플랫폼")
 st.divider()
 
 # ---------------------------
-# 오버레이: 보험사 선택 유도 (투명 배경 + 중앙 안내, 10초 후 자동 사라짐)
+# 오버레이 & 게이트
 # ---------------------------
 def render_overlay():
     st.markdown(
@@ -138,8 +118,13 @@ def render_overlay():
         unsafe_allow_html=True
     )
 
-if (not st.session_state.insurer_selected) and (time.time() < st.session_state.get("overlay_until", 0)):
+#衍생 상태: 선택 여부를 '항상' 계산
+insurer_selected = st.session_state.insurer in INSURERS
+
+# 미선택이면 오버레이만 그리고 아래 실행 중단 → 선택 즉시 자동 리런 후 채팅창 활성화
+if not insurer_selected:
     render_overlay()
+    st.stop()
 
 # ---------------------------
 # 채팅 메시지 렌더
@@ -224,14 +209,11 @@ def send_answer_pdf(user_text: str):
 # ---------------------------
 # 입력창 & 사이드바 액션 처리
 # ---------------------------
-user_input = st.chat_input("질문을 입력하고 Enter를 누르세요…", disabled=not st.session_state.insurer_selected)
+user_input = st.chat_input("질문을 입력하고 Enter를 누르세요…", disabled=not insurer_selected)
 if user_input:
-    if not st.session_state.insurer_selected:
-        st.warning("먼저 보험사를 선택해 주세요.")
-    else:
-        send_normal_chat(user_input)
+    send_normal_chat(user_input)
+    st.rerun()   # 전송 직후 즉시 렌더 반영
 
-# 사이드바 버튼 처리
 if 'make_pdf_clicked' in locals() and make_pdf_clicked:
     # 최근 사용자 질문 찾기
     last_user = None
@@ -243,7 +225,7 @@ if 'make_pdf_clicked' in locals() and make_pdf_clicked:
         st.warning("먼저 질문을 입력해 주세요.")
     else:
         send_answer_pdf(last_user)
-        st.rerun()   # ✅ PDF 생성 후 즉시 반영
+        st.rerun()   # PDF 생성 후 즉시 반영
 
 if 'clear_clicked' in locals() and clear_clicked:
     st.session_state.messages = []
