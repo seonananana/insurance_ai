@@ -21,10 +21,7 @@ def retrieve_context_base(db: Session, query_vec: List[float], top_k: int = 20) 
         FROM document_chunks
         ORDER BY embedding <=> (:qvec)::vector
         LIMIT :k
-    """)
-
-    # (선택) 바인드 명시적으로 선언하면 더 확실
-    sql = sql.bindparams(
+    """).bindparams(
         bindparam("qvec"),
         bindparam("k", type_=int),
     )
