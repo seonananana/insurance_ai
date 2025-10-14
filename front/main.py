@@ -41,8 +41,10 @@ def inject_css(css: str) -> None:
 # ===== CSS 주입 (헤더/본문/입력창 폭·패딩 완전 정렬) =====
 inject_css("""
 :root{
-  --page-max: 1000px;   /* 본문(헤더/채팅/입력창) 최대 폭 */
-  --page-pad: 16px;     /* 좌우 내부 패딩 */
+  --page-max: 1000px;     /* 본문/입력창 동일 폭 */
+  --page-pad: 16px;       /* 좌우 패딩 */
+  --btn-size: 36px;       /* 전송 버튼 한 변 길이 */
+  --btn-gap: 6px;         /* 버튼과 입력창 오른쪽 여백 */
 }
 
 /* 상단 메뉴/Deploy/브랜딩 숨김 */
@@ -51,7 +53,7 @@ div[data-testid="stToolbar"],
 div[data-testid="stDecoration"],
 div[data-testid="stDeployButton"] { display:none !important; }
 
-/* 본문 컨테이너 */
+/* 본문 컨테이너 폭/패딩 */
 div.block-container{
   max-width: var(--page-max);
   padding: 18px var(--page-pad) 0 var(--page-pad);
@@ -65,8 +67,8 @@ div.block-container{
   font-weight:800; font-size:34px; letter-spacing:-0.3px; margin-bottom:12px;
 }
 
-/* 구분선 */
-hr.page-divider{ border:none; height:1px; background:#E5E7EB; margin:18px 0 12px; }
+/* 헤더 아래 얇은 선 완전 제거 */
+hr.page-divider{ display:none !important; }
 
 /* 채팅 버블 */
 div[data-testid="stChatMessage"]{
@@ -74,24 +76,30 @@ div[data-testid="stChatMessage"]{
   box-shadow:0 2px 10px rgba(0,0,0,.04); background:#fff;
 }
 
-/* ===== 입력창을 헤더/본문과 '정확히' 맞추기 ===== */
+/* ===== 입력창을 본문과 정확히 정렬 ===== */
 div[data-testid="stChatInput"]{
   position: sticky; bottom:0; z-index:5;
   background:rgba(255,255,255,.92);
-  backdrop-filter:saturate(1.8) blur(6px);
-  border-top:1px solid #eee;
+  /* 위쪽 얇은 라인도 제거 */
+  border-top: 0 !important;
   padding:0; /* 바깥 여백 제거 */
 }
 
-/* 입력창 래퍼도 본문과 동일한 중앙 정렬 + 동일 패딩 */
+/* 입력창 래퍼도 중앙 정렬 + 동일 패딩 */
 div[data-testid="stChatInput"] > div{
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: 0 var(--page-pad);  /* block-container와 동일 */
+  padding: 0 var(--page-pad);
 }
 
-/* 내부에 걸린 추가 max-width 해제 */
-div[data-testid="stChatInput"] > div > div{ max-width: 100% !important; }
+/* 입력창 주변의 중복 박스/그림자 제거 */
+div[data-testid="stChatInput"] > div,
+div[data-testid="stChatInput"] > div > div,
+div[data-testid="stChatInput"] form{
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
 
 /* 왼쪽 아이콘(이모지/첨부) 제거 */
 div[data-testid="stChatInput"] label svg,
@@ -101,21 +109,28 @@ div[data-testid="stChatInput"] [data-testid*="icon"]{
   visibility:hidden !important; pointer-events:none !important; margin:0 !important;
 }
 
-/* 전송 버튼을 맨 오른쪽 고정 */
+/* 폼 기준 배치 */
 div[data-testid="stChatInput"] form{ position:relative; }
-div[data-testid="stChatInput"] form button:last-of-type{
-  position:absolute; right:8px; top:50%; transform:translateY(-50%);
-  min-width:36px; height:36px; padding:0 10px; border-radius:10px;
-}
 
-/* 버튼 공간만큼 우측 패딩 확보 + 높이 통일 */
+/* 입력 상자: 버튼 공간만큼 우측 패딩 확보 */
 div[data-testid="stChatInput"] textarea,
 div[data-testid="stChatInput"] input[type="text"]{
-  padding-right:60px !important; min-height:44px;
+  width:100% !important; box-sizing: border-box !important;
+  min-height: 44px;
+  padding-right: calc(var(--btn-size) + var(--btn-gap) + 4px) !important;
   border:1px solid #e5e7eb !important; border-radius:12px !important;
 }
 
-/* 사이드바 폭 */
+/* 전송 버튼: 항상 입력 상자 '안쪽' 오른쪽에 위치 */
+div[data-testid="stChatInput"] form button:last-of-type{
+  position:absolute;
+  right: calc(var(--page-pad) + var(--btn-gap));
+  top:50%; transform: translateY(-50%);
+  width: var(--btn-size); height: var(--btn-size);
+  padding:0; border-radius:10px;
+}
+
+/* 사이드바 폭 고정 */
 section[data-testid="stSidebar"]{ width:320px !important; }
 """)
 
