@@ -1,144 +1,156 @@
-# back/app/routers/qa.py
-# -----------------------------------------------------------------------------
-# 기능:
-#  - /qa/ask    : 프론트에서 온 질문을 유연하게(message/query/q) 받아 RAG 컨텍스트 생성 후 LLM 답변
-#  - /qa/search : 프론트 검색용 간단 컨텍스트 미리보기(옵션)
-#  - 의존성 최소화: DB/임베딩 팩토리 제거, rag_service + openai_service만 사용
-# -----------------------------------------------------------------------------
-
-from __future__ import annotations
-from typing import Any, Dict, List, Optional
-
+# app/routers/qa.py  ✅ 전체 교체본
+from io import BytesIO
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
 
-from app.services.rag_service import retrieve_context
-from app.services.openai_service import chat_llm  # /chat/completion에서 쓰던 동일 함수 사용
+router = APIRouter(prefix="/qa", tags=["qa"])
 
-router = APIRouter(tags=["qa"])
+# ----------------- 유틸 -----------------
+def _register_korean_font():
+    candidates = [
+        os.getenv("PDF_FONT_PATH"),
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        "/Library/Fonts/AppleGothic.ttf",
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            try:
+                pdfmetrics.registerFont(TTFont("KR", p))
+                return "KR"
+            except Exception:
+                continue
+    pdfmetrics.registerFont(TTFont("Fallback", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
+    return "Fallback"
 
+def _wrap_text(text: str, max_chars=80):
+    lines = []
+    for para in text.splitlines():
+        buf = ""
+        for ch in para:
+            buf += ch
+            if len(buf) >= max_chars:
+                lines.append(buf); buf = ""
+        if buf:
+            lines.append(buf)
+    return lines or [""]
 
-# ------------------------------
-# 유연 입력 모델 (message / query / q 아무거나 허용)
-# ------------------------------
-class AskIn(BaseModel):
-    message: Optional[str] = None
-    query: Optional[str] = None
-    q: Optional[str] = None
-    insurer: Optional[str] = None
-    top_k: Optional[int] = 3
-    temperature: Optional[float] = 0.3
-    max_tokens: Optional[int] = 512
+# ----------------- 스키마 -----------------
+class AskReq(BaseModel):
+    query: str
+    policy_type: str | None = None
+    top_k: int = 3
+    max_tokens: int = 256
 
-    def text(self) -> str:
-        return (self.message or self.query or self.q or "").strip()
+class SearchReq(BaseModel):
+    query: str
+    policy_type: str | None = None
+    top_k: int = 5
 
+# ----------------- RAG 엔드포인트 -----------------
+@router.post("/ask")
+def ask(req: AskReq):
+    """검색 → (가능하면) LLM 생성까지 수행"""
+    try:
+        from app.services.rag_service import retrieve_context
+        ctx_text: str = retrieve_context(req.query, insurer=req.policy_type, top_k=req.top_k)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"retrieval_failed: {e}")
 
-class AnswerOut(BaseModel):
-    answer: str
-    context: Optional[str] = None
-    citations: Optional[List[Dict[str, Any]]] = None
-    # (PDF 기능을 붙이면 pdf_url 추가 가능)
-    # pdf_url: Optional[str] = None
-
-
-class SearchIn(BaseModel):
-    message: Optional[str] = None
-    query: Optional[str] = None
-    q: Optional[str] = None
-    insurer: Optional[str] = None
-    top_k: Optional[int] = 5
-
-    def text(self) -> str:
-        return (self.message or self.query or self.q or "").strip()
-
-
-# ------------------------------
-# /qa/ask : 근거 기반 답변
-# ------------------------------
-@router.post("/ask", response_model=AnswerOut)
-async def ask(req: AskIn) -> AnswerOut:
-    question = req.text()
-    if not question:
-        raise HTTPException(status_code=422, detail="message / query / q 중 하나는 필수입니다.")
-
-    insurer = (req.insurer or "DB손해").strip()
-    top_k = max(1, int(req.top_k or 3))
-
-    # 1) RAG 컨텍스트 수집
-    context = retrieve_context(question, insurer=insurer, top_k=top_k)
-
-    if not context:
-        return AnswerOut(
-            answer="문서에서 관련 근거를 찾지 못했습니다. 보험사 선택/Top-K/인덱스를 확인해주세요.",
-            context=""
+    # OpenAIService가 있으면 생성, 실패하면 근거 요약으로 폴백
+    try:
+        from app.services.openai_service import OpenAIService  # 레포에 없으면 except로 이동
+        svc = OpenAIService()
+        prompt = (
+            "다음 질문에 대해 제공된 근거만 사용하여 한국어로 간결하고 정확하게 답변하세요.\n\n"
+            f"[질문]\n{req.query}\n\n"
+            f"[근거]\n{ctx_text}\n\n"
+            "규정/면책은 원문 표현을 유지하고, 가능하면 항목화하세요."
         )
+        answer, *_ = svc.chat(prompt, max_tokens=req.max_tokens)
+        return {"answer": answer, "context": ctx_text}
+    except Exception:
+        first_block = (ctx_text.split("\n\n---\n\n") or [""])[0]
+        return {
+            "answer": f"(LLM 생성 비활성화) 아래 근거 발췌로 대신합니다:\n{first_block[:1000]}",
+            "context": ctx_text,
+        }
 
-    # 2) LLM에게 근거와 함께 질의
-    sys = "너는 보험 약관/상품설명서 전문 어시스턴트다. 항상 한국어로 간결하고 사실 기반으로 답한다."
-    user = (
-        "아래 근거 문서를 토대로 질문에 답해줘.\n"
-        "가능하면 목록으로 정리하고, 근거가 부족하면 '문서 근거가 충분치 않습니다'라고 말해.\n\n"
-        f"[근거]\n{context}\n\n"
-        f"[질문]\n{question}"
-    )
+@router.post("/search")
+def search(req: SearchReq):
+    """검색만 수행: retrieve_context를 블럭 단위로 파싱해 리스트로 반환"""
+    try:
+        from app.services.rag_service import retrieve_context
+        ctx_text: str = retrieve_context(req.query, insurer=req.policy_type, top_k=req.top_k)
+        blocks = ctx_text.split("\n\n---\n\n") if ctx_text else []
+        results = [{"rank": i + 1, "text": b} for i, b in enumerate(blocks) if b.strip()]
+        return {"results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"search_failed: {e}")
+
+# ----------------- PDF 엔드포인트 -----------------
+@router.post("/answer_pdf")
+async def answer_pdf(payload: dict):
+    question = (payload.get("question") or "").strip()
+    insurer = payload.get("policy_type")
+    top_k = int(payload.get("top_k") or 5)
+    max_tok = int(payload.get("max_tokens") or 512)
 
     try:
-        reply = chat_llm(
-            messages=[{"role": "system", "content": sys},
-                      {"role": "user", "content": user}],
-            temperature=float(req.temperature or 0.3),
-            max_tokens=int(req.max_tokens or 512),
+        from app.services.rag_service import retrieve_context
+        ctx_blocks_str: str = retrieve_context(question, insurer=insurer, top_k=top_k)
+    except Exception as e:
+        return JSONResponse(
+            {"answer": "(검색 실패)", "sources": [], "error": f"retrieval_failed: {e}"},
+            status_code=200,
+        )
+
+    try:
+        font_name = _register_korean_font()
+        buf = BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        c.setTitle("RAG Answer")
+        c.setAuthor("Insurance RAG")
+
+        width, height = A4
+        x_margin, y_margin = 20 * mm, 20 * mm
+        y = height - y_margin
+
+        c.setFont(font_name, 14)
+        c.drawString(x_margin, y, f"[질문] {question[:120]}"); y -= 10 * mm
+
+        c.setFont(font_name, 12)
+        c.drawString(x_margin, y, f"[보험사] {insurer or '미지정'}   [Top-K] {top_k}"); y -= 8 * mm
+
+        c.setFont(font_name, 11)
+        c.drawString(x_margin, y, "[근거]"); y -= 7 * mm
+
+        for block in ctx_blocks_str.split("\n\n---\n\n"):
+            for line in _wrap_text(block, max_chars=90):
+                if y < 25 * mm:
+                    c.showPage(); c.setFont(font_name, 11); y = height - y_margin
+                c.drawString(x_margin, y, line); y -= 6 * mm
+            y -= 4 * mm
+
+        c.showPage(); c.save()
+        pdf_bytes = buf.getvalue(); buf.close()
+
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'inline; filename="rag_answer.pdf"'},
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM 호출 실패: {e}")
-
-    # (간단한 citation 파싱: 파일명/페이지를 컨텍스트에서 추출)
-    citations: List[Dict[str, Any]] = []
-    # context가 "(파일 p.페이지)\n텍스트" 패턴으로 들어오므로 가볍게 분해
-    for block in context.split("\n\n---\n\n"):
-        header, *_ = block.split("\n", 1)
-        # 예: "(DB실손보험2507.pdf p.19)"
-        if header.startswith("(") and "p." in header:
-            h = header.strip("()")
-            fn, page = h.split(" p.")
-            citations.append({"file": fn.strip(), "page": page.strip()})
-
-    return AnswerOut(answer=reply, context=context, citations=citations)
-
-
-# ------------------------------
-# /qa/search : 미리보기용(옵션)
-# ------------------------------
-@router.post("/search")
-async def search(req: SearchIn) -> List[Dict[str, Any]]:
-    question = req.text()
-    if not question:
-        raise HTTPException(status_code=422, detail="message / query / q 중 하나는 필수입니다.")
-
-    insurer = (req.insurer or "DB손해").strip()
-    top_k = max(1, int(req.top_k or 5))
-
-    context = retrieve_context(question, insurer=insurer, top_k=top_k)
-    if not context:
-        return []
-
-    items: List[Dict[str, Any]] = []
-    for block in context.split("\n\n---\n\n"):
-        header, *rest = block.split("\n", 1)
-        snippet = (rest[0] if rest else "").strip()
-        if len(snippet) > 240:
-            snippet = snippet[:240] + "…"
-
-        file_name, page = None, None
-        if header.startswith("(") and "p." in header:
-            h = header.strip("()")
-            file_name, page = h.split(" p.")
-        items.append(
-            {
-                "file": (file_name or "").strip(),
-                "page": (page or "").strip(),
-                "snippet": snippet,
-            }
+        return JSONResponse(
+            {"answer": "PDF 생성에 실패했습니다.", "sources": [], "error": f"pdf_failed: {e}"},
+            status_code=200,
         )
-    return items
