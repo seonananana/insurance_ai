@@ -4,7 +4,7 @@ import requests
 import streamlit as st
 
 # ===================== 기본 설정 =====================
-st.set_page_config(page_title="보험 문서 RAG", page_icon="🧾", layout="wide")
+st.set_page_config(page_title="보험 문서 RAG", page_icon="🧾", layout="wide", initial_sidebar_state="expanded")
 
 API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE") or "http://localhost:8000"
 INSURERS = ["DB손해", "현대해상", "삼성화재"]
