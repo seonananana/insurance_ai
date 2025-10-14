@@ -64,7 +64,7 @@ def ask(req: AskReq):
         from app.services.rag_service import retrieve_context
         ctx_text: str = retrieve_context(req.query, insurer=req.policy_type, top_k=req.top_k)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"retrieval_failed: {e}")
+        return JSONResponse({"answer":"", "sources": [], "error": f"retrieval_failed: {e}"}, status_code=200)
 
     # OpenAIService가 있으면 생성, 실패하면 근거 요약으로 폴백
     try:
