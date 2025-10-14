@@ -1,64 +1,66 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import json, re
+import json, re, argparse
 from pathlib import Path
 
-RAW_DIR = Path("back/data/raw_txt")
-OUT_PATH = Path("back/data/corpus/corpus_sentences.jsonl")
-
 def clean(s: str) -> str:
-    s = s.replace("\u3000", " ")  # 전각 공백
+    s = s.replace("\u3000", " ")
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 
-def split_sentences(text: str):
-    # kss가 있으면 우선 사용
-    try:
-        import kss
-        for s in kss.split_sentences(text):
-            s = clean(s)
-            if len(s) >= 5:
-                yield s
-    except Exception:
-        # 매우 단순한 폴백
-        for s in re.split(r"(?<=[.!?。…])\s+|\n+", text):
-            s = clean(s)
-            if len(s) >= 5:
-                yield s
+def split_regex(text: str):
+    # 한국/영문 종결부호 기준 초간단 문장분리 (빠름)
+    t = clean(text)
+    if not t: return []
+    # 종결부호를 보존해서 다시 붙이기
+    parts = re.split(r'([.!?…？！。])', t)
+    out = []
+    for i in range(0, len(parts), 2):
+        chunk = parts[i].strip()
+        end = parts[i+1] if i+1 < len(parts) else ""
+        sent = (chunk + end).strip()
+        if len(sent) >= 3:
+            out.append(sent)
+    return out
 
-def guess_meta_from_name(name: str):
-    # 파일명에서 대충 meta 추정 (예: DB_2024-07-01_약관.txt)
-    m_policy = re.search(r"(DB손해|현대해상|삼성화재|메리츠|KB손해|한화손해)", name)
-    m_date = re.search(r"(20\d{2}[-_.]?\d{2}[-_.]?\d{2})", name)
-    return {
-        "policy_type": m_policy.group(1) if m_policy else None,
-        "rev_date": m_date.group(1).replace("_","-").replace(".","-") if m_date else None,
-        "source": name
-    }
+def split_kss(text: str):
+    # 느리지만 정확; 필요시 사용
+    import kss
+    return [clean(s) for s in kss.split_sentences(text, num_workers=1)]
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="cp949", errors="ignore")
 
 def main():
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    n_total = 0
-    with OUT_PATH.open("w", encoding="utf-8") as out:
-        for txt_path in sorted(RAW_DIR.glob("*.txt")):
-            # 인코딩 이슈 대응 (utf-8 우선, 실패 시 cp949 시도)
-            try:
-                raw = txt_path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                raw = txt_path.read_text(encoding="cp949", errors="ignore")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--raw_dir", default="back/data/raw_txt", help="입력 TXT 폴더")
+    ap.add_argument("--out", default="back/data/corpus/corpus_sentences.jsonl", help="출력 JSONL 경로")
+    ap.add_argument("--fast", action="store_true", help="kss 대신 정규식 분리 사용(권장)")
+    args = ap.parse_args()
 
-            meta = guess_meta_from_name(txt_path.name)
-            sid = 0
-            for sent in split_sentences(raw):
-                sid += 1
-                rec = {
-                    "id": f"{txt_path.stem}#s{sid:05d}",
-                    "text": sent,
-                    "meta": {k:v for k,v in meta.items() if v}
-                }
+    RAW_DIR = Path(args.raw_dir)
+    OUT = Path(args.out)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+
+    files = [p for p in RAW_DIR.rglob("*") if p.suffix.lower() == ".txt"]
+    if not files:
+        print(f"[ERR] no .txt files in {RAW_DIR}")
+        return
+
+    total = 0
+    with OUT.open("w", encoding="utf-8") as out:
+        for f in sorted(files):
+            txt = read_text(f)
+            sents = split_regex(txt) if args.fast else split_kss(txt)
+            for i, s in enumerate(sents, start=1):
+                rec = {"id": f"{f.stem}#s{i:05d}", "text": s, "meta": {"source": f.name}}
                 out.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                n_total += 1
-    print(f"[OK] Saved {OUT_PATH}  ({n_total} sentences)")
+                total += 1
+            print(f"[OK] {f.name}: {len(sents)} sentences")
+    print(f"[DONE] saved {OUT} ({total} sentences)")
 
 if __name__ == "__main__":
     main()
