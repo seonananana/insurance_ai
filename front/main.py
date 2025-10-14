@@ -21,6 +21,14 @@ def inject_css(css: str):
 
 inject_css("""
 /* 기본 폰트 */
+/* 스트림릿 상단 메뉴/Deploy/브랜딩 숨김 */
+#MainMenu {visibility:hidden;}
+header {visibility:hidden;}
+footer {visibility:hidden;}
+div[data-testid="stToolbar"]{display:none;}
+div[data-testid="stDecoration"]{display:none;}
+div[data-testid="stDeployButton"]{display:none;}
+
 html, body, [class*="stApp"] { font-family: 'Noto Sans KR', system-ui, -apple-system, sans-serif; }
 h1, h2, h3 { letter-spacing: -0.3px; }
 
@@ -56,7 +64,7 @@ div[data-testid="stChatMessage"]{
 }
 div[data-testid="stChatMessage"] pre { background:#f7f8fb; }
 
-/* ====== 입력창 폭 정렬 + 왼쪽 아이콘 제거 후, 오른쪽으로 이동 ====== */
+/* ====== 입력창 폭 정렬 + 왼쪽 이모지 제거 & 전송버튼 오른쪽 정렬 ====== */
 div[data-testid="stChatInput"]{
   position: sticky; bottom: 0; z-index: 5;
   background: rgba(255,255,255,0.92);
@@ -67,6 +75,29 @@ div[data-testid="stChatInput"]{
   padding-left:0 !important; padding-right:0 !important;
 }
 
+/* 폼을 기준으로 배치 */
+div[data-testid="stChatInput"] form{ position:relative; }
+
+/* (1) 왼쪽 기본 이모지/아이콘 전부 숨김 */
+div[data-testid="stChatInput"] form > svg,
+div[data-testid="stChatInput"] form [role="img"]{
+  opacity:0 !important; width:0 !important; height:0 !important;
+  margin:0 !important; pointer-events:none !important;
+}
+
+/* (2) 전송 버튼을 입력창 우측 끝으로 정렬 */
+div[data-testid="stChatInput"] form button{
+  position:absolute;
+  right:8px; top:50%; transform:translateY(-50%);
+  min-width:36px; height:36px; padding:0 8px; border-radius:10px;
+}
+
+/* (3) 버튼 공간만큼 인풋 오른쪽 패딩 확보 + 높이 통일 */
+div[data-testid="stChatInput"] textarea,
+div[data-testid="stChatInput"] input[type="text"]{
+  padding-right:56px !important; min-height:44px;
+}
+
 /* 내부 래퍼 최대폭 해제 */
 div[data-testid="stChatInput"] form,
 div[data-testid="stChatInput"] > div,
@@ -74,39 +105,16 @@ div[data-testid="stChatInput"] > div > div{
   width:100% !important; max-width:100% !important;
 }
 
-/* 폼을 기준으로 커스텀 아이콘 배치 */
-div[data-testid="stChatInput"] form{ position:relative; }
-
-/* (1) 왼쪽 기본 이모지/아이콘 전부 숨김 — 전송버튼 아이콘은 그대로 둠 */
-div[data-testid="stChatInput"] form > svg,
-div[data-testid="stChatInput"] form [role="img"]{
-  opacity:0 !important; width:0 !important; height:0 !important;
-  margin:0 !important; pointer-events:none !important;
-}
-
-/* (2) 오른쪽(전송 버튼 왼쪽)에 커스텀 이모지 표시 */
-div[data-testid="stChatInput"] form::after{
-  content: "💬";                    /* ← 원하는 이모지로 바꿔도 됨 */
-  position:absolute;
-  right: 52px;                      /* 전송버튼과 간격 */
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 16px;
-  opacity: .85;
-}
-
-/* (3) 이모지 들어갈 공간만큼 우측 패딩 확보 */
+/* 입력창 박스 자체의 모양(가독성) */
 div[data-testid="stChatInput"] textarea,
 div[data-testid="stChatInput"] input[type="text"]{
-  padding-right: 72px !important;   /* 버튼+이모지 여유 */
-  padding-left: 12px !important;
+  border:1px solid #e5e7eb !important; border-radius:12px !important;
 }
 
-/* 둥근 버튼 */
-button, .stDownloadButton, .stLinkButton { border-radius: 10px !important; }
-
-/* 캡션 톤 */
-small, .stCaption { color:#6b7280 !important; }
+/* 액션 버튼들 */
+.stButton>button, .stDownloadButton>button, .stLinkButton>button{
+  border-radius:10px !important; padding:8px 12px !important; font-weight:600 !important;
+}
 """)
 
 # ---------------------------
@@ -144,28 +152,32 @@ def post_json(url: str, payload: dict, timeout=(20, 180)):
     try:
         r.raise_for_status()
         return r, None
-    except requests.RequestException as e:
-        return None, str(e)
+    except requests.HTTPError as e:
+        return None, f"{e} / {getattr(e, 'response', None) and e.response.text}"
 
 # ---------------------------
-# 사이드바 (설정 + 액션)
+# UI - 사이드바
 # ---------------------------
 with st.sidebar:
     st.subheader("⚙️ 설정")
-    options = ["선택하세요…"] + INSURERS
-    default_idx = options.index(st.session_state.insurer) if st.session_state.insurer in options else 0
-    st.selectbox("보험사", options, index=default_idx, key="insurer",
-                 help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.")
-    st.session_state.top_k = st.slider("Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3))
-    st.session_state.temperature = st.slider("온도(창의성)", 0.0, 1.0, float(st.session_state.get("temperature", DEFAULT_TEMP)), 0.05)
-    st.session_state.max_tokens = st.slider("최대 토큰", 128, 2048, int(st.session_state.get("max_tokens", DEFAULT_MAXTOK)), 64)
+    insurer = st.selectbox("보험사", INSURERS, index=1)  # 기본: 현대해상
+    st.session_state.insurer = insurer
 
-    st.markdown("---")
-    col_a, col_b = st.columns(2)
-    with col_a:  make_pdf_clicked = st.button("📄 PDF 생성", use_container_width=True)
-    with col_b:  clear_clicked = st.button("🗑️ 대화 지우기", use_container_width=True)
+    st.write("Top-K (근거 개수)")
+    top_k = st.slider("Top-K", 1, 10, st.session_state.top_k, key="top_k", label_visibility="collapsed")
 
-    st.markdown("---")
+    st.write("온도(창의성)")
+    temperature = st.slider("온도", 0.0, 1.0, st.session_state.temperature, 0.01, key="temperature", label_visibility="collapsed")
+
+    st.write("최대 토큰")
+    max_tokens = st.slider("max tokens", 128, 2048, st.session_state.max_tokens, key="max_tokens", label_visibility="collapsed")
+
+    cols = st.columns(2)
+    with cols[0]:
+        make_pdf_clicked = st.button("📄 PDF 생성", use_container_width=True)
+    with cols[1]:
+        clear_clicked = st.button("🗑️ 대화 지우기", type="secondary", use_container_width=True)
+
     st.caption(f"API_BASE: {API_BASE}")
 
 # ---------------------------
@@ -177,37 +189,47 @@ st.markdown('<div class="full-row"><hr class="page-divider"/></div>', unsafe_all
 # ---------------------------
 # 오버레이 & 게이트
 # ---------------------------
-def render_overlay():
-    st.markdown("""
+st.markdown("""
     <style>
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.25);
-               display: flex; align-items: center; justify-content: center; z-index: 9999; }
-    .overlay-card { background: white; padding: 24px 28px; border-radius: 12px;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.2); font-size: 18px; text-align: center; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.25); display: none; z-index: 9; }
+    .gate {
+        position: fixed; inset: 0; display: none; place-items: center; z-index: 10;
+        font-size: 14px;
+    }
+    .gate .card {
+        width: 520px; max-width: 90vw; background: #fff; border: 1px solid #e5e7eb;
+        border-radius: 14px; padding: 16px 16px 10px 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    .gate .title { font-weight: 800; font-size: 18px; margin-bottom: 8px; }
+    .gate .desc  { color:#555; line-height:1.6; }
     </style>
-    <div class="overlay"><div class="overlay-card">
-        <b>보험사를 선택해 주세요.</b><br/>왼쪽 사이드바에서 보험사를 고르면 시작할 수 있어요.
-    </div></div>""", unsafe_allow_html=True)
-
-insurer_selected = st.session_state.insurer in INSURERS
-if not insurer_selected:
-    render_overlay()
-    st.stop()
+""", unsafe_allow_html=True)
 
 # ---------------------------
-# 채팅 메시지 렌더(선택 보험사 전용)
+# 채팅 표시
 # ---------------------------
-for msg in _cur_messages():
-    with st.chat_message("user" if msg["role"] == "user" else "assistant"):
-        st.markdown(msg["content"])
-        meta = msg.get("meta") or {}
+for m in _cur_messages():
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+
+# ---------------------------
+# 서버 응답 표시 함수
+# ---------------------------
+def render_answer_card(answer: str, meta: dict | None = None):
+    with st.chat_message("assistant"):
+        st.markdown(answer)
+
+        if not meta:
+            return
         sources = meta.get("sources") or []
         if sources:
-            with st.expander("🔎 근거 문서/소스", expanded=False):
-                for i, h in enumerate(sources, 1):
-                    title = h.get("clause_title") or h.get("doc_id") or f"source {i}"
-                    score = h.get("score")
-                    snippet = (h.get("content") or "").strip()
+            with st.expander("🔎 참조 문서 (Top-K)", expanded=False):
+                for i, item in enumerate(sources, 1):
+                    title = item.get("title") or "제목 없음"
+                    score = item.get("score")
+                    snippet = item.get("snippet") or ""
+                    pdf_url = item.get("pdf_url")
+
                     if len(snippet) > 320: snippet = snippet[:320] + "…"
                     st.markdown(f"**{i}. {title}** (score: {score})\n\n> {snippet}")
         pdf = meta.get("pdf")
@@ -241,36 +263,31 @@ def send_normal_chat(user_text: str):
 
 def send_answer_pdf(user_text: str):
     msgs = _cur_messages()
-    msgs.append({"role": "user", "content": f"(PDF 요청) {user_text}"})
+    msgs.append({"role":"user", "content": f"(PDF 요청) {user_text}"})
     payload = {
-        "question": user_text,
-        "policy_type": st.session_state.insurer,
+        "messages": [{"role":"user","content": user_text}],
+        "insurer": st.session_state.insurer,
         "top_k": int(st.session_state.top_k),
+        "temperature": float(st.session_state.temperature),
         "max_tokens": int(st.session_state.max_tokens),
+        "pdf": True,
     }
-    try:
-        r = requests.post(f"{API_BASE}/qa/answer_pdf", json=payload, timeout=(20, 180))
-        r.raise_for_status()
-    except requests.RequestException as e:
-        msgs.append({"role": "assistant", "content": f"❌ PDF 생성 실패: {e}"})
+    r, err = post_json(f"{API_BASE}/chat/completion", payload, timeout=(20, 300))
+    if err:
+        msgs.append({"role":"assistant","content": f"❌ PDF 생성 실패: {err}"})
         return
-    ctype = r.headers.get("content-type", "").lower()
-    if ctype.startswith("application/pdf"):
-        msgs.append({"role": "assistant", "content": "PDF가 생성되었습니다. 아래 버튼으로 내려받으세요.",
-                     "meta": {"pdf": {"bytes": r.content}}})
-    else:
-        data = r.json()
-        answer = data.get("answer") or "요약이 제공되지 않았습니다."
-        sources = data.get("sources") or []
-        pdf_url = data.get("pdf_url")
-        msgs.append({"role": "assistant", "content": answer,
-                     "meta": {"sources": sources, "pdf": {"url": pdf_url} if pdf_url else None}})
+
+    data = r.json() if r is not None else {}
+    answer = data.get("reply") or "⚠️ 빈 응답입니다."
+    sources = data.get("sources") or []
+    pdf_url = (data.get("pdf") or {}).get("url")
+    render_answer_card(answer, {"sources": sources, "pdf": {"url": pdf_url} if pdf_url else None})
 
 # ---------------------------
 # 입력창 & 사이드바 액션 처리
 # ---------------------------
 user_input = st.chat_input(f"[{st.session_state.insurer}] 질문을 입력하고 Enter를 누르세요…",
-                           disabled=not insurer_selected)
+                           disabled=not insurer_selected if (insurer_selected := bool(st.session_state.insurer)) else True)
 if user_input:
     send_normal_chat(user_input)
     st.rerun()
