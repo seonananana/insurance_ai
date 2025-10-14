@@ -49,26 +49,33 @@ def post_json(url: str, payload: dict, timeout=(20, 180)):
 with st.sidebar:
     st.subheader("⚙️ 설정")
 
-    # 보험사 선택: 값이 세션에 'insurer'로 직접 저장되도록 key를 통일
+    # 선택 직후 즉시 UI 갱신되게 on_change에서 rerun
+    def _on_insurer_changed():
+        st.session_state.insurer_selected = st.session_state.insurer in INSURERS
+        st.session_state.overlay_until = 0 if st.session_state.insurer_selected else time.time() + 10
+        st.rerun()  # ✅ 선택 즉시 다시 실행 → 오버레이 해제 & 입력창 활성화가 곧바로 반영
+
     options = ["선택하세요…"] + INSURERS
     default_idx = options.index(st.session_state.insurer) if st.session_state.insurer in options else 0
 
+    # ✅ key를 'insurer'로 통일해 세션에 직접 저장
     st.selectbox(
         "보험사",
         options,
         index=default_idx,
-        key="insurer",  # ✅ 선택값이 곧 st.session_state.insurer
+        key="insurer",
+        on_change=_on_insurer_changed,
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
-    #衍생 상태: 선택 여부 / 오버레이 타이머
+    #衍生 상태(보험사 선택 여부) 갱신
     st.session_state.insurer_selected = st.session_state.insurer in INSURERS
     if st.session_state.insurer_selected:
         st.session_state.overlay_until = 0
     else:
         st.session_state.setdefault("overlay_until", time.time() + 10)
 
-    # --- 이하 기존 슬라이더/버튼은 그대로 ---
+    # --- 이하 기존 슬라이더/버튼/설명/캡션 그대로 ---
     st.session_state.top_k = st.slider(
         "Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3),
         help="질문과 가장 유사한 문서 조각을 몇 개까지 불러올지입니다. 높을수록 느려질 수 있습니다."
@@ -224,6 +231,7 @@ if user_input:
         st.warning("먼저 보험사를 선택해 주세요.")
     else:
         send_normal_chat(user_input)
+        st.rerun()   # ✅ 전송 직후 즉시 렌더링 재실행
 
 # 사이드바 버튼 처리
 if 'make_pdf_clicked' in locals() and make_pdf_clicked:
@@ -237,6 +245,7 @@ if 'make_pdf_clicked' in locals() and make_pdf_clicked:
         st.warning("먼저 질문을 입력해 주세요.")
     else:
         send_answer_pdf(last_user)
+        st.rerun()   # ✅ PDF 생성 후 즉시 반영
 
 if 'clear_clicked' in locals() and clear_clicked:
     st.session_state.messages = []
