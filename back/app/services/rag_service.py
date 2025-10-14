@@ -6,7 +6,8 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 from app.services.vector_search import retrieve_context_base
-from app.services.embeddings_sbert import SBERTEmbedder  # ← 네 프로젝트 파일명
+import os
+from app.services.embeddings_sbert import SBertEmbeddings
 
 # DB 세션 스코프
 @contextmanager
@@ -18,6 +19,17 @@ def _session_scope() -> Session:
     finally:
         s.close()
 
+
+# 전역 싱글톤: SBertEmbeddings 인스턴스
+_EMBEDDER = None
+def _get_embedder() -> SBertEmbeddings:
+   global _EMBEDDER
+   if _EMBEDDER is None:
+        model_dir = os.getenv("SBERT_MODEL_DIR") or os.getenv("SBERT_MODEL_NAME", "intfloat/e5-base-v2")
+        device = os.getenv("EMBED_DEVICE", "cpu")
+        # use_e5_prefix=None → 자동감지(e5/bge면 prefix 사용)
+        _EMBEDDER = SBertEmbeddings(model_dir, use_e5_prefix=None, device=device, normalize=True)
+   return _EMBEDDER
 # ─────────────────────────────────────────────────────────────
 # 보험사명 정규화
 # ─────────────────────────────────────────────────────────────
@@ -86,7 +98,7 @@ def retrieve_context(
     if isinstance(arg1, str):
         question: str = arg1
         insurer_in = insurer if insurer is not None else (arg2 if isinstance(arg2, str) else None)
-        query_vec = SBERTEmbedder.embed([question])[0]
+        query_vec = _get_embedder().embed([question], is_query=True)[0]
         with _session_scope() as db:
             hits = _search_top_k(db, query_vec, insurer=insurer_in, top_k=top_k)
         return _format_blocks(hits)
