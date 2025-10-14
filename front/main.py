@@ -31,26 +31,39 @@ div.block-container { max-width: 1000px; padding-top: 18px; }
 section[data-testid="stSidebar"] { width: 320px !important; }
 section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 12px; }
 
-/* 헤더 카드: 파란 배경 + 흰 글자 */
+/* 헤더 카드: 파란 배경 + 흰 글자 + 컨테이너 가득 채우기 */
 .page-hero{
+  display:block;           /* ✅ 블록 요소로 강제 */
+  width:100% !important;   /* ✅ 컨테이너 전체 폭 */
   background:#2563EB; color:#fff;
   padding:22px 24px; border-radius:16px;
   font-weight:800; font-size:34px; letter-spacing:-0.3px;
   margin-bottom:12px;
 }
 
-/* 헤더 아래 구분선 */
+/* 헤더 아래 구분선(컨테이너 전체) */
 hr.page-divider{
-  border:none; height:1px; background:#E5E7EB;
-  margin:18px 0 12px;
+  border:none; height:1px; background:#E5E7EB; margin:18px 0 12px;
 }
 
-/* 채팅 버블(카드 느낌) */
-div[data-testid="stChatMessage"]{
-  border:1px solid #eee; border-radius:16px; padding:10px 14px; margin:8px 0;
-  box-shadow:0 2px 10px rgba(0,0,0,0.04); background:#fff;
+/* 페이지 컨테이너 폭(헤더/구분선/입력창 동일 기준) */
+div.block-container{ max-width:1000px; padding-top:18px; }
+
+/* 입력창: 컨테이너 폭과 정확히 맞춤 + 고정 */
+div[data-testid="stChatInput"]{
+  position: sticky; bottom:0; z-index:5;
+  background:rgba(255,255,255,0.92); backdrop-filter:saturate(1.8) blur(6px);
+  border-top:1px solid #eee;
+  width:100% !important;
+  margin-left:0 !important; margin-right:0 !important;
+  padding-left:0 !important; padding-right:0 !important;
 }
-div[data-testid="stChatMessage"] pre { background:#f7f8fb; }
+/* 내부 래퍼들이 걸어둔 max-width 해제 */
+div[data-testid="stChatInput"] form,
+div[data-testid="stChatInput"] > div,
+div[data-testid="stChatInput"] > div > div{
+  width:100% !important; max-width:100% !important;
+}
 
 /* 입력창: 컨테이너 폭과 정확히 맞춤 + 고정 */
 div[data-testid="stChatInput"]{
