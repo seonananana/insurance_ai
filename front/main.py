@@ -41,58 +41,32 @@ def inject_css(css: str) -> None:
 # ===== CSS 주입 (헤더/본문/입력창 폭·패딩 완전 정렬) =====
 inject_css("""
 :root{
-  --page-max: 1000px;     /* 본문/입력창 동일 폭 */
-  --page-pad: 16px;       /* 좌우 패딩 */
-  --btn-size: 36px;       /* 전송 버튼 한 변 길이 */
-  --btn-gap: 6px;         /* 버튼과 입력창 오른쪽 여백 */
+  --page-max: 1000px;
+  --page-pad: 16px;
+  --btn-size: 36px;
+  --btn-gap: 10px;   /* 버튼과 우측 테두리 사이 여유(증가시 더 안쪽으로 들어옴) */
 }
 
-/* 상단 메뉴/Deploy/브랜딩 숨김 */
-#MainMenu, header, footer,
-div[data-testid="stToolbar"],
-div[data-testid="stDecoration"],
-div[data-testid="stDeployButton"] { display:none !important; }
-
-/* 본문 컨테이너 폭/패딩 */
+/* 본문 컨테이너 */
 div.block-container{
   max-width: var(--page-max);
   padding: 18px var(--page-pad) 0 var(--page-pad);
-  font-family: 'Noto Sans KR', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 
-/* 헤더 카드 */
-.page-hero{
-  width:100%; background:#2563EB; color:#fff;
-  padding:22px 24px; border-radius:16px;
-  font-weight:800; font-size:34px; letter-spacing:-0.3px; margin-bottom:12px;
-}
-
-/* 헤더 아래 얇은 선 완전 제거 */
-hr.page-divider{ display:none !important; }
-
-/* 채팅 버블 */
-div[data-testid="stChatMessage"]{
-  border:1px solid #eee; border-radius:16px; padding:10px 14px; margin:8px 0;
-  box-shadow:0 2px 10px rgba(0,0,0,.04); background:#fff;
-}
-
-/* ===== 입력창을 본문과 정확히 정렬 ===== */
+/* ===== 입력창 정렬 ===== */
 div[data-testid="stChatInput"]{
   position: sticky; bottom:0; z-index:5;
   background:rgba(255,255,255,.92);
-  /* 위쪽 얇은 라인도 제거 */
-  border-top: 0 !important;
-  padding:0; /* 바깥 여백 제거 */
+  border-top:0 !important;
+  padding:0;
 }
-
-/* 입력창 래퍼도 중앙 정렬 + 동일 패딩 */
 div[data-testid="stChatInput"] > div{
   max-width: var(--page-max);
   margin: 0 auto;
   padding: 0 var(--page-pad);
 }
 
-/* 입력창 주변의 중복 박스/그림자 제거 */
+/* 중복 테두리/박스 제거 */
 div[data-testid="stChatInput"] > div,
 div[data-testid="stChatInput"] > div > div,
 div[data-testid="stChatInput"] form{
@@ -101,61 +75,41 @@ div[data-testid="stChatInput"] form{
   box-shadow: none !important;
 }
 
-/* ✅ 왼쪽 이모지/첨부 아이콘만 숨김 (label 내부만 타겟) */
+/* ⛔ 왼쪽 이모지/첨부만 숨김(버튼 아이콘은 건드리지 않음) */
 div[data-testid="stChatInput"] label svg,
 div[data-testid="stChatInput"] label [role="img"],
 div[data-testid="stChatInput"] label [data-testid*="icon"]{
   display:none !important;
-  width:0 !important; height:0 !important;
-  opacity:0 !important; visibility:hidden !important;
-  pointer-events:none !important; margin:0 !important;
+  width:0 !important;height:0 !important;opacity:0 !important;
+  visibility:hidden !important;pointer-events:none !important;margin:0 !important;
 }
 
-/* ✅ 전송 버튼은 정상 표시 + 가운데 정렬 + 크기 고정 */
-div[data-testid="stChatInput"] form button{
-  position:absolute;                /* (이미 사용 중이면 유지) */
-  right: calc(var(--page-pad) + var(--btn-gap));
-  top:50%; transform: translateY(-50%);
-  width: var(--btn-size); height: var(--btn-size);
-  padding:0; border-radius:10px;
-
-  display:flex; align-items:center; justify-content:center; /* ← 아이콘 가운데 정렬 */
-}
-
-/* ✅ 전송 버튼 아이콘 복구(크기/가시성) */
-div[data-testid="stChatInput"] form button svg,
-div[data-testid="stChatInput"] form button [role="img"]{
-  width: 18px !important;
-  height: 18px !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  display: inline-block !important;
-}
-
-/* 폼 기준 배치 */
-div[data-testid="stChatInput"] form{ position:relative; }
-
-/* 입력 상자: 버튼 공간만큼 우측 패딩 확보 */
+/* 입력 상자: 버튼 자리 확보 */
 div[data-testid="stChatInput"] textarea,
 div[data-testid="stChatInput"] input[type="text"]{
-  width:100% !important; box-sizing: border-box !important;
-  min-height: 44px;
-  padding-right: calc(var(--btn-size) + var(--btn-gap) + 4px) !important;
+  width:100% !important; box-sizing:border-box !important;
+  min-height:44px;
+  padding-right: calc(var(--btn-size) + var(--btn-gap) + 12px) !important;
   border:1px solid #e5e7eb !important; border-radius:12px !important;
 }
 
-/* 전송 버튼: 항상 입력 상자 '안쪽' 오른쪽에 위치 */
-div[data-testid="stChatInput"] form button:last-of-type{
-  position:absolute;
-  right: calc(var(--page-pad) + var(--btn-gap));
-  top:50%; transform: translateY(-50%);
-  width: var(--btn-size); height: var(--btn-size);
-  padding:0; border-radius:10px;
+/* 버튼: 항상 입력 상자 ‘안쪽’ 우측에 고정 */
+div[data-testid="stChatInput"] form{ position:relative; }
+div[data-testid="stChatInput"] form button{
+  position:absolute !important;
+  right: calc(var(--page-pad) + var(--btn-gap)) !important;  /* ← 필요하면 btn-gap만 조정 */
+  top:50% !important; transform:translateY(-50%) !important;
+  width: var(--btn-size) !important; height: var(--btn-size) !important;
+  padding:0 !important; border-radius:10px !important;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  z-index:2;
 }
-
-/* 사이드바 폭 고정 */
-section[data-testid="stSidebar"]{ width:320px !important; }
-""")
+/* 버튼 아이콘 정상 표시 */
+div[data-testid="stChatInput"] form button svg,
+div[data-testid="stChatInput"] form button [role="img"]{
+  width:18px !important; height:18px !important;
+  opacity:1 !important; visibility:visible !important; display:inline-block !important;
+}""")
 
 # ============================================================
 # HTTP
