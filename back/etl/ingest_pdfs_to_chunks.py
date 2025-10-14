@@ -27,7 +27,7 @@ import fitz  # PyMuPDF
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text as sql, event
 from pgvector.sqlalchemy import Vector
-from pgvector.sqlalchemy import register_vector
+from pgvector.psycopg import register_vector
 
 # ---- 환경 로드 ----
 ROOT = Path(__file__).resolve().parents[1]  # back/
