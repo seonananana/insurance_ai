@@ -1,6 +1,5 @@
 # front/main.py
 import os
-import time
 import requests
 import streamlit as st
 
@@ -21,22 +20,56 @@ def inject_css(css: str):
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 inject_css("""
+/* 전체 폰트/기본 */
 html, body, [class*="stApp"] { font-family: 'Noto Sans KR', system-ui, -apple-system, sans-serif; }
 h1, h2, h3 { letter-spacing: -0.3px; }
+
+/* 페이지 컨테이너 폭 (헤더/디바이더/입력창 동일) */
+div.block-container { max-width: 1000px; padding-top: 18px; }
+
+/* 사이드바 */
 section[data-testid="stSidebar"] { width: 320px !important; }
 section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 12px; }
-div[data-testid="stChatMessage"] {
-  border: 1px solid #eee; border-radius: 16px; padding: 10px 14px; margin: 8px 0;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.04); background: #fff;
+
+/* 헤더 카드: 파란 배경 + 흰 글자 */
+.page-hero{
+  background:#2563EB; color:#fff;
+  padding:22px 24px; border-radius:16px;
+  font-weight:800; font-size:34px; letter-spacing:-0.3px;
+  margin-bottom:12px;
 }
-div[data-testid="stChatMessage"] pre { background: #f7f8fb; }
-div[data-testid="stChatInput"] {
-  position: sticky; bottom: 0; z-index: 5; background: rgba(255,255,255,0.92);
-  backdrop-filter: saturate(1.8) blur(6px); border-top: 1px solid #eee;
+
+/* 헤더 아래 구분선 */
+hr.page-divider{
+  border:none; height:1px; background:#E5E7EB;
+  margin:18px 0 12px;
 }
-div.block-container { max-width: 1000px; padding-top: 18px; }
+
+/* 채팅 버블(카드 느낌) */
+div[data-testid="stChatMessage"]{
+  border:1px solid #eee; border-radius:16px; padding:10px 14px; margin:8px 0;
+  box-shadow:0 2px 10px rgba(0,0,0,0.04); background:#fff;
+}
+div[data-testid="stChatMessage"] pre { background:#f7f8fb; }
+
+/* 입력창: 컨테이너 폭과 정확히 맞춤 + 고정 */
+div[data-testid="stChatInput"]{
+  position: sticky; bottom: 0; z-index: 5;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: saturate(1.8) blur(6px);
+  border-top: 1px solid #eee;
+  width: 100% !important;
+  margin-left: 0 !important; margin-right: 0 !important;
+}
+div[data-testid="stChatInput"] > div{
+  width: 100% !important; max-width: 100% !important;
+}
+
+/* 버튼 둥글게 */
 button, .stDownloadButton, .stLinkButton { border-radius: 10px !important; }
-small, .stCaption { color: #6b7280 !important; }
+
+/* 캡션 톤 */
+small, .stCaption { color:#6b7280 !important; }
 """)
 
 # ---------------------------
@@ -44,12 +77,12 @@ small, .stCaption { color: #6b7280 !important; }
 # ---------------------------
 def ensure_state():
     ss = st.session_state
-    # 기존 단일 메시지 -> 보험사별로 1회 마이그레이션
+    # 예전 단일 메시지 리스트를 쓰고 있었다면 1회 마이그레이션
     if "messages_by_insurer" not in ss:
         ss["messages_by_insurer"] = {}
-        if ss.get("messages"):  # 예전 데이터가 있으면 현재 선택 보험사로 귀속
-            owner = ss.get("insurer") or "기본"
-            ss["messages_by_insurer"][owner] = ss["messages"]
+        if ss.get("messages"):
+            fallback_owner = ss.get("insurer") or "기본"
+            ss["messages_by_insurer"][fallback_owner] = ss["messages"]
         ss["messages"] = []  # 더는 사용하지 않음
 
     ss.setdefault("insurer", None)  # 선택 박스 값이 여기에 직접 들어옴
@@ -67,7 +100,7 @@ def _cur_messages():
     return st.session_state.messages_by_insurer[company]
 
 # ---------------------------
-# HTTP 공통
+# HTTP
 # ---------------------------
 def post_json(url: str, payload: dict, timeout=(20, 180)):
     try:
@@ -89,7 +122,7 @@ with st.sidebar:
         "보험사",
         options,
         index=default_idx,
-        key="insurer",  # 선택값이 곧 세션 상태
+        key="insurer",  # 세션에 직접 저장
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
@@ -120,15 +153,14 @@ with st.sidebar:
             "- **온도**: 0=보수적, 1=창의적. 문서 QA는 0.2~0.4.\n"
             "- **최대 토큰**: 답변 길이 상한."
         )
-
     st.markdown("---")
     st.caption(f"API_BASE: {API_BASE}")
 
 # ---------------------------
-# 헤더
+# 헤더 (파란 카드 + 디바이더)
 # ---------------------------
-st.title("보험 문서 RAG 플랫폼")
-st.divider()
+st.markdown('<div class="page-hero">보험 문서 RAG 플랫폼</div>', unsafe_allow_html=True)
+st.markdown('<hr class="page-divider"/>', unsafe_allow_html=True)
 
 # ---------------------------
 # 오버레이 & 게이트
@@ -137,23 +169,15 @@ def render_overlay():
     st.markdown(
         """
         <style>
-        .overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.25);
-            display: flex; align-items: center; justify-content: center; z-index: 9999;
-        }
-        .overlay-card {
-            background: white; padding: 24px 28px; border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2); font-size: 18px; text-align: center;
-        }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.25);
+                   display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .overlay-card { background: white; padding: 24px 28px; border-radius: 12px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.2); font-size: 18px; text-align: center; }
         </style>
-        <div class="overlay">
-            <div class="overlay-card">
-                <b>보험사를 선택해 주세요.</b><br/>
-                왼쪽 사이드바에서 보험사를 고르면 시작할 수 있어요.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
+        <div class="overlay"><div class="overlay-card">
+            <b>보험사를 선택해 주세요.</b><br/>왼쪽 사이드바에서 보험사를 고르면 시작할 수 있어요.
+        </div></div>
+        """, unsafe_allow_html=True
     )
 
 insurer_selected = st.session_state.insurer in INSURERS
@@ -252,7 +276,7 @@ user_input = st.chat_input(
 )
 if user_input:
     send_normal_chat(user_input)
-    st.rerun()   # 전송 직후 즉시 렌더 반영
+    st.rerun()   # 전송 직후 즉시 반영
 
 if 'make_pdf_clicked' in locals() and make_pdf_clicked:
     last_user = next((m["content"] for m in reversed(_cur_messages())
