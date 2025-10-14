@@ -1,233 +1,198 @@
 # front/main.py
-from __future__ import annotations
 import os
-import json
-import time
-from io import BytesIO
-from typing import Dict, Any, List
-
 import requests
 import streamlit as st
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 기본 설정
-# ──────────────────────────────────────────────────────────────────────────────
-DEFAULT_API_BASE = os.environ.get("API_BASE", "http://localhost:8000")
-INSURERS = ["현대해상", "삼성화재", "DB손해보험", "메리츠화재", "교보생명", "한화생명"]
+# ===================== 기본 =====================
+st.set_page_config(page_title="보험 문서 RAG", page_icon="🧾", layout="wide")
+API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE") or "http://localhost:8000"
+INSURERS = ["DB손해", "현대해상", "삼성화재"]
 
-st.set_page_config(page_title="보험 문서 RAG", page_icon="📄", layout="wide")
+ss = st.session_state
+ss.setdefault("messages_by_insurer", {})
+ss.setdefault("insurer", "현대해상")
+ss.setdefault("top_k", 3)
+ss.setdefault("temperature", 0.30)
+ss.setdefault("max_tokens", 512)
 
-if "messages" not in st.session_state:
-    st.session_state.messages: List[Dict[str, str]] = []
+def _msgs():
+    k = ss.insurer
+    ss.messages_by_insurer.setdefault(k, [])
+    return ss.messages_by_insurer[k]
 
-if "last_answer" not in st.session_state:
-    st.session_state.last_answer = ""
+def inject_css(css: str): st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 사이드바(설정)
-# ──────────────────────────────────────────────────────────────────────────────
+# ===================== CSS (최종 고정본) =====================
+inject_css("""
+:root{
+  --page-max: 1000px;   /* 헤더/본문/입력창 동일 폭 */
+  --page-pad: 16px;     /* 좌우 패딩 */
+  --btn-size: 36px;     /* 전송 버튼 크기 */
+  --btn-gap: 8px;       /* 버튼과 입력 우측 테두리 간격 */
+  --btn-inset: 16px;    /* 버튼을 입력 상자 '안쪽'으로 들여보내는 정도 */
+}
+
+/* 상단 메뉴/Deploy 숨김 */
+#MainMenu, header, footer,
+div[data-testid="stToolbar"],
+div[data-testid="stDecoration"],
+div[data-testid="stDeployButton"] { display:none !important; }
+
+/* 본문 폭/패딩 */
+div.block-container{
+  max-width: var(--page-max);
+  padding: 18px var(--page-pad) 0 var(--page-pad);
+  font-family: 'Noto Sans KR', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+/* 헤더(파란 박스) */
+.page-hero{
+  width:100%; background:#2563EB; color:#fff;
+  padding:22px 24px; border-radius:16px;
+  font-weight:800; font-size:34px; letter-spacing:-0.3px; margin-bottom:12px;
+}
+/* 헤더 아래 선 제거 */
+hr.page-divider{ display:none !important; }
+
+/* 메시지 버블 */
+div[data-testid="stChatMessage"]{
+  border:1px solid #eee; border-radius:16px; padding:10px 14px; margin:8px 0;
+  box-shadow:0 2px 10px rgba(0,0,0,.04); background:#fff;
+}
+
+/* ===== 입력창 정렬/고정 ===== */
+div[data-testid="stChatInput"]{
+  position: sticky; bottom:0; z-index:5;
+  background:rgba(255,255,255,.92);
+  border-top:0 !important; padding:0;
+}
+div[data-testid="stChatInput"] > div{
+  max-width: var(--page-max); margin: 0 auto; padding: 0 var(--page-pad);
+}
+/* 겹박스 제거 */
+div[data-testid="stChatInput"] > div,
+div[data-testid="stChatInput"] > div > div,
+div[data-testid="stChatInput"] form{
+  background: transparent !important; border:0 !important; box-shadow:none !important;
+}
+/* 왼쪽 이모지/첨부 아이콘만 숨김 */
+div[data-testid="stChatInput"] label svg,
+div[data-testid="stChatInput"] label [role="img"],
+div[data-testid="stChatInput"] label [data-testid*="icon"]{
+  display:none !important;
+  width:0 !important;height:0 !important;opacity:0 !important;
+  visibility:hidden !important;pointer-events:none !important;margin:0 !important;
+}
+
+/* 입력 상자: 버튼 자리 확보 + 높이 통일 */
+div[data-testid="stChatInput"] textarea,
+div[data-testid="stChatInput"] input[type="text"]{
+  width:100% !important; box-sizing:border-box !important; min-height:44px;
+  /* 버튼 크기 + inset + gap 만큼 우측 여백 확보 */
+  padding-right: calc(var(--btn-size) + var(--btn-inset) + var(--btn-gap)) !important;
+  border:1px solid #e5e7eb !important; border-radius:12px !important;
+}
+
+/* 폼을 기준으로 버튼 절대배치 */
+div[data-testid="stChatInput"] form{ position:relative; }
+
+/* 전송 버튼을 입력 상자 '안쪽' 오른쪽에 고정 */
+div[data-testid="stChatInput"] [data-testid="stChatInputSubmitButton"],
+div[data-testid="stChatInput"] form button:last-of-type{
+  position:absolute !important;
+  /* 페이지 패딩 + inset 값만큼 왼쪽으로 들여서 상자 안쪽에 박음 */
+  right: calc(var(--page-pad) + var(--btn-gap)) !important;
+  top:50% !important; transform: translateY(-50%) !important;
+  width: var(--btn-size) !important; height: var(--btn-size) !important;
+  padding:0 !important; border-radius:10px !important;
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  z-index: 2;
+  /* 버튼을 살짝 안쪽으로 더 들여보내기 (입력 상자 테두리 안) */
+  margin-right: var(--btn-inset) !important;
+}
+
+/* 버튼 아이콘 정상 표시 */
+div[data-testid="stChatInput"] [data-testid="stChatInputSubmitButton"] svg,
+div[data-testid="stChatInput"] form button:last-of-type svg{
+  width:18px !important; height:18px !important; display:inline-block !important;
+  opacity:1 !important; visibility:visible !important;
+}
+
+/* 사이드바 폭 */
+section[data-testid="stSidebar"]{ width:320px !important; }
+""")
+
+# ===================== 사이드바 =====================
 with st.sidebar:
-    st.header("⚙️ 설정")
-    insurer = st.selectbox("보험사", INSURERS, index=0)
-    top_k = st.slider("Top-K (근거 개수)", 1, 10, 3)
-    temperature = st.slider("온도(창의성)", 0.0, 1.0, 0.30, step=0.01)
-    max_tokens = st.slider("최대 토큰", 128, 2048, 512, step=32)
+    st.subheader("⚙️ 설정")
+    st.selectbox("보험사", INSURERS, key="insurer")
+    st.write("Top-K (근거 개수)")
+    st.slider("Top-K", 1, 10, key="top_k", label_visibility="collapsed")
+    st.write("온도(창의성)")
+    st.slider("온도", 0.0, 1.0, step=0.01, key="temperature", label_visibility="collapsed")
+    st.write("최대 토큰")
+    st.slider("max tokens", 128, 2048, step=64, key="max_tokens", label_visibility="collapsed")
+    c1, c2 = st.columns(2)
+    with c1: make_pdf = st.button("📄 PDF 생성", use_container_width=True)
+    with c2: clear_chat = st.button("🗑️ 대화 지우기", use_container_width=True)
+    st.caption(f"API_BASE: {API_BASE}")
 
-    api_base = st.text_input("API_BASE", value=DEFAULT_API_BASE)
-    st.caption(api_base)
+# ===================== 헤더 =====================
+st.markdown('<div class="page-hero">보험 문서 RAG 플랫폼</div>', unsafe_allow_html=True)
 
-    # PDF 생성 버튼
-    if st.button("📄 PDF 생성", use_container_width=True):
-        _answer = (st.session_state.get("last_answer") or "").strip()
-        if not _answer:
-            st.warning("먼저 질문해서 답변을 생성하세요.")
-        else:
-            # 1) 백엔드가 제공하는 /export/pdf 사용 시도
-            ok, pdf_bytes, err = try_export_pdf_via_backend(api_base, "상담 결과", _answer)
-            if not ok:
-                # 2) 백엔드가 없으면 프론트에서 PDF 생성(로컬)
-                ok, pdf_bytes, err = try_export_pdf_locally("상담 결과", _answer)
+# ===================== 채팅 표시 =====================
+for m in _msgs():
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
-            if ok:
-                st.success("PDF가 준비되었습니다. 아래 버튼으로 내려받기 하세요.")
-                st.download_button(
-                    label="⬇️ 다운로드",
-                    data=pdf_bytes,
-                    file_name="answer.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                    key=f"download_{int(time.time())}",
-                    use_container_width=True,
-                )
-            else:
-                st.error(f"PDF 생성 실패: {err}")
-
-    # 대화 지우기
-    if st.button("🧹 대화 지우기", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.last_answer = ""
-        st.experimental_rerun()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 본문: 대화 영역
-# ──────────────────────────────────────────────────────────────────────────────
-st.title("보험 문서 RAG")
-
-# 기존 대화 표시
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# 입력창
-prompt = st.chat_input(f"[{insurer}] 질문을 입력하세요…")
-if prompt:
-    # 사용자 메시지 추가/표시
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # 모델 호출
-    with st.chat_message("assistant"):
-        with st.spinner("답변 생성 중…"):
-            answer_text, raw = ask_backend(
-                api_base=api_base,
-                query=prompt,
-                insurer=insurer,
-                top_k=top_k,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                history=st.session_state.messages[:-1],  # 마지막 user 제외한 히스토리
-            )
-            st.markdown(answer_text)
-
-    # 상태 저장
-    st.session_state.messages.append({"role": "assistant", "content": answer_text})
-    st.session_state.last_answer = answer_text
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 함수들
-# ──────────────────────────────────────────────────────────────────────────────
-def ask_backend(
-    api_base: str,
-    query: str,
-    insurer: str,
-    top_k: int,
-    temperature: float,
-    max_tokens: int,
-    history: List[Dict[str, str]],
-) -> tuple[str, Any]:
-    """
-    백엔드 엔드포인트가 프로젝트마다 다를 수 있어
-    여러 후보 경로를 순차 시도한다.
-    반환: (answer_text, raw_json_or_text)
-    """
-    payload = {
-        "query": query,
-        "insurer": insurer,
-        "top_k": top_k,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "history": history,  # [{role, content}...]
-    }
-
-    # 가능한 엔드포인트 후보들
-    candidates = [
-        "/ask",
-        "/chat",
-        "/query",
-        "/rag/ask",
-        "/answer",
-        "/v1/ask",
-    ]
-
-    last_error = None
-    for path in candidates:
-        url = f"{api_base.rstrip('/')}{path}"
-        try:
-            res = requests.post(url, json=payload, timeout=60)
-            if res.status_code == 404:
-                continue
-            res.raise_for_status()
-            # JSON 혹은 텍스트 응답 유연 처리
-            try:
-                data = res.json()
-            except ValueError:
-                text = res.text.strip()
-                return (text or "(빈 응답)"), text
-
-            # 흔한 키 패턴 처리
-            for key in ["answer", "content", "text"]:
-                if key in data and isinstance(data[key], str):
-                    return data[key], data
-
-            # nested: {"output": {"text": "..."}}
-            if isinstance(data, dict) and "output" in data:
-                out = data["output"]
-                if isinstance(out, dict):
-                    for key in ["text", "answer", "content"]:
-                        if key in out and isinstance(out[key], str):
-                            return out[key], data
-
-            # 최후 수단: 전체 문자열화
-            return json.dumps(data, ensure_ascii=False, indent=2), data
-
-        except requests.RequestException as e:
-            last_error = e
-            continue
-
-    if last_error:
-        return f"(요청 실패) {last_error}", None
-    return "(요청 실패) 사용 가능한 API 경로를 찾지 못했습니다.", None
-
-
-def try_export_pdf_via_backend(api_base: str, title: str, content: str) -> tuple[bool, bytes | None, str | None]:
-    """
-    백엔드의 /export/pdf 엔드포인트로 PDF를 생성해 받아온다.
-    """
-    url = f"{api_base.rstrip('/')}/export/pdf"
+# ===================== 서버 통신 =====================
+def _post(url, payload, timeout=(20,180)):
     try:
-        res = requests.post(url, json={"title": title, "content": content}, timeout=60)
-        if res.status_code == 404:
-            return False, None, "백엔드에 /export/pdf 엔드포인트가 없습니다(404)."
-        res.raise_for_status()
-        return True, res.content, None
+        r = requests.post(url, json=payload, timeout=timeout); r.raise_for_status()
+        return r.json(), None
     except requests.RequestException as e:
-        return False, None, str(e)
+        return None, str(e)
 
+def send_chat(t):
+    log = _msgs()
+    log.append({"role":"user","content":t})
+    data, err = _post(f"{API_BASE}/chat/completion", {
+        "messages":[{"role":"user","content":t}],
+        "insurer": ss.insurer,
+        "top_k": int(ss.top_k),
+        "temperature": float(ss.temperature),
+        "max_tokens": int(ss.max_tokens),
+    })
+    if err: log.append({"role":"assistant","content": f"❌ 요청 실패: {err}"}); return
+    log.append({"role":"assistant","content": (data or {}).get("reply") or "⚠️ 빈 응답입니다."})
 
-def try_export_pdf_locally(title: str, content: str) -> tuple[bool, bytes | None, str | None]:
-    """
-    백엔드가 없을 때 프론트(스트림릿)에서 PDF를 만들어 반환.
-    reportlab이 필요하다.
-    """
-    try:
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4
-        from textwrap import wrap
-    except Exception as e:
-        return False, None, f"로컬 PDF 생성 실패(의존성 필요): {e}. `pip install reportlab` 필요."
+def send_pdf_from_last():
+    log = _msgs()
+    last = next((m["content"] for m in reversed(log) if m["role"]=="user"), None)
+    if not last:
+        with st.chat_message("assistant"): st.warning("먼저 질문을 입력해 주세요."); return
+    data, err = _post(f"{API_BASE}/chat/completion", {
+        "messages":[{"role":"user","content":last}],
+        "insurer": ss.insurer,
+        "top_k": int(ss.top_k),
+        "temperature": float(ss.temperature),
+        "max_tokens": int(ss.max_tokens),
+        "pdf": True,
+    }, timeout=(20,300))
+    if err:
+        with st.chat_message("assistant"): st.error(f"PDF 생성 실패: {err}"); return
+    with st.chat_message("assistant"):
+        st.markdown((data or {}).get("reply") or "⚠️ 빈 응답입니다.")
+        pdf_url = (data or {}).get("pdf",{}).get("url")
+        if pdf_url:
+            href = pdf_url if not pdf_url.startswith("/") else f"{API_BASE}{pdf_url}"
+            st.link_button("📄 PDF 열기", href)
 
-    buf = BytesIO()
-    try:
-        c = canvas.Canvas(buf, pagesize=A4)
-        w, h = A4
-        x, y = 40, h - 50
-        c.setTitle(title)
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(x, y, title or "문서")
-        y -= 24
-        c.setFont("Helvetica", 11)
-        for line in (content or "(내용 없음)").splitlines():
-            for seg in wrap(line, 90):
-                c.drawString(x, y, seg)
-                y -= 16
-                if y < 40:
-                    c.showPage()
-                    c.setFont("Helvetica", 11)
-                    y = h - 50
-        c.save()
-        buf.seek(0)
-        return True, buf.getvalue(), None
-    except Exception as e:
-        return False, None, f"로컬 PDF 생성 실패: {e}"
+# ===================== 입력 / 액션 =====================
+user_text = st.chat_input(f"[{ss.insurer}] 질문을 입력하고 Enter를 누르세요…", disabled=not bool(ss.insurer))
+if user_text:
+    send_chat(user_text); st.rerun()
+if make_pdf:
+    send_pdf_from_last(); st.rerun()
+if clear_chat:
+    ss.messages_by_insurer[ss.insurer] = []; st.rerun()
