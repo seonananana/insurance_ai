@@ -26,12 +26,7 @@ from typing import List, Tuple
 import fitz  # PyMuPDF
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text as sql, event
-
-# pgvector (psycopg3) 어댑터
-try:
-    from pgvector.psycopg import register_vector
-except ImportError as e:
-    raise SystemExit("`pip install pgvector` 를 먼저 설치하세요.") from e
+from pgvector.sqlalchemy import Vector
 
 # ---- 환경 로드 ----
 ROOT = Path(__file__).resolve().parents[1]  # back/
