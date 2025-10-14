@@ -1,44 +1,93 @@
 # back/app/main.py
-# FastAPI 앱 초기화 + CORS + 라우터 등록(health, qa, chat, report, chatlog)
+# FastAPI 앱 초기화 + CORS + 라우터 등록(health, qa, chat, report, chatlog) + /export/pdf
 
 import os
+from io import BytesIO
 from pathlib import Path
+from typing import List, Optional
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.routers import health, qa, chat, report
-from io import BytesIO
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+# 라우터
+from app.routers import health, qa, chat
+try:
+    from app.routers import report       # (있으면 사용, 내부 prefix="/qa" 가정)
+except Exception:
+    report = None
+try:
+    from app.routers import chatlog      # (있으면 사용, 내부 prefix="/chat" 가정)
+except Exception:
+    chatlog = None
+
+# ReportLab (PDF)
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from textwrap import wrap
-from typing import List, Optional
-from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
-from reportlab.pdfbase.ttfonts import TTFont
 
-try:
-    from app.routers import report          # /qa/... (report.py 내부 prefix="/qa")
-except Exception:
-    report = None
-try:
-    from app.routers import chatlog         # /chat/log (chatlog.py 내부 prefix="/chat")
-except Exception:
-    chatlog = None
+# =========================================
+# 앱 & 정적 파일
+# =========================================
+app = FastAPI(title="Insurance RAG API", version="0.3.0")
 
-def _register_kopub_from_back_root() -> str | None:
+BASE_DIR = Path(__file__).resolve().parent.parent  # back/app -> back
+FILES_DIR = Path(os.getenv("FILES_DIR", BASE_DIR / "files")).resolve()
+# 폴더가 없어도 기동되게 check_dir=False
+app.mount("/files", StaticFiles(directory=str(FILES_DIR), check_dir=False), name="files")
+
+# =========================================
+# CORS (로컬 Streamlit 기본 허용)
+# =========================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+        "http://localhost:8502",
+        "http://127.0.0.1:8502",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# =========================================
+# 라우터 등록
+#  - health: 내부 prefix 없음 → 여기서 '/health' 부여
+#  - qa:     내부에서 prefix="/qa"를 이미 사용 → 여기서 prefix 추가 금지
+#  - chat:   내부에서 prefix="/chat" 사용 → 그대로 등록
+#  - report, chatlog: 있으면 등록
+# =========================================
+app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(qa.router)         # ⚠️ qa.py에 prefix="/qa"가 이미 있는 형태에 맞춤
+app.include_router(chat.router)       # chat.py가 prefix="/chat"을 갖고 있다고 가정
+
+if report is not None:
+    app.include_router(report.router)  # report.py가 내부에서 prefix="/qa" 사용한다고 가정
+if chatlog is not None:
+    app.include_router(chatlog.router) # chatlog.py가 내부에서 prefix="/chat"
+
+@app.get("/")
+def root():
+    return {"ok": True, "service": "Insurance RAG API"}
+
+# =========================================
+# 폰트 등록 유틸
+# =========================================
+def _register_kopub_from_back_root() -> Optional[str]:
     """
-    back/ 바로 아래에 둔 KoPubWorld Dotum Light.ttf 를 등록.
-    Bold 파일이 없으면 Light를 Bold로도 등록해 사용.
+    back/ 바로 아래에 둔 KoPubWorld Dotum Light/Bold 를 등록.
+    Bold가 없으면 Light를 Bold alias로 재등록.
     """
     back_root = Path(__file__).resolve().parent.parent  # .../back
-    # 파일명 여러 케이스 대응
     regular_candidates = [
         back_root / "KoPubWorld Dotum Light.ttf",
         back_root / "KoPubWorldDotum-Light.ttf",
@@ -49,18 +98,15 @@ def _register_kopub_from_back_root() -> str | None:
         back_root / "KoPubWorldDotum-Bold.ttf",
         back_root / "KoPubWorld_Dotum_Bold.ttf",
     ]
-
     reg = next((p for p in regular_candidates if p.exists()), None)
     if not reg:
         return None
-
     pdfmetrics.registerFont(TTFont("KoPubDotum", str(reg)))
 
     bold = next((p for p in bold_candidates if p.exists()), None)
     if bold and bold.exists():
         pdfmetrics.registerFont(TTFont("KoPubDotum-Bold", str(bold)))
     else:
-        # Bold 파일 없으면 Light를 Bold 이름으로도 등록(두께는 같지만 코드 깨지지 않음)
         pdfmetrics.registerFont(TTFont("KoPubDotum-Bold", str(reg)))
 
     pdfmetrics.registerFontFamily(
@@ -72,53 +118,19 @@ def _register_kopub_from_back_root() -> str | None:
     )
     return "KoPubDotum"
 
-# 한글 기본 폰트 패밀리명
-_KR_FONT = _register_kopub_from_back_root() or "Helvetica"
+def _register_korean_fonts() -> str:
+    """
+    KoPubDotum 우선, 없으면 Noto/Nanum 탐색. 그래도 없으면 Helvetica(한글 □ 가능).
+    """
+    fam = _register_kopub_from_back_root()
+    if fam:
+        return fam
 
-app = FastAPI(title="Insurance RAG API", version="0.3.0")
-
-# 정적 파일 마운트(폴더 없어도 기동되게)
-BASE_DIR = Path(__file__).resolve().parent.parent  # back/app -> back
-FILES_DIR = Path(os.getenv("FILES_DIR", BASE_DIR / "files")).resolve()
-app.mount("/files", StaticFiles(directory=str(FILES_DIR), check_dir=False), name="files")
-
-# CORS (로컬 Streamlit 기본 허용)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8501",
-        "http://127.0.0.1:8501",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 라우터 등록
-app.include_router(health.router, prefix="/health", tags=["health"])  # health는 내부 prefix 없음 → 여기서 부여
-app.include_router(qa.router,     prefix="/qa",     tags=["qa"])      # qa.py는 내부 prefix 없음 → 여기서 부여
-app.include_router(chat.router)                                        # chat.py는 내부 prefix="/chat" 이미 있음
-app.include_router(report.router)
-
-if chatlog is not None:
-    app.include_router(chatlog.router)                                 # chatlog.py 내부 prefix="/chat"
-if report is not None:
-    app.include_router(report.router)                                  # report.py 내부 prefix="/qa"
-
-@app.get("/")
-def root():
-    return {"ok": True, "service": "Insurance RAG API"}
-    
-class PdfPayload(BaseModel):
-    title: str = "응답"
-    content: str  # PDF로 내릴 본문 텍스트
-
-def _register_korean_fonts():
-    """프로젝트 내 fonts/ 또는 시스템 폰트에서 한글 폰트를 등록."""
     FONT_DIRS = [
-        Path(__file__).resolve().parent.parent / "fonts",   # back/fonts/
+        BASE_DIR / "fonts",                         # back/fonts/
         Path("/usr/share/fonts/truetype/noto"),
         Path("/usr/share/fonts/opentype/noto"),
+        Path("/usr/share/fonts/truetype/nanum"),
         Path("/Library/Fonts"),
         Path.home() / "Library/Fonts",
     ]
@@ -128,59 +140,38 @@ def _register_korean_fonts():
     ]
     for base in FONT_DIRS:
         try:
-            for fam, reg, bold in candidates:
-                reg_p = base / reg
-                bold_p = base / bold
+            for fam_name, reg, bold in candidates:
+                reg_p, bold_p = base / reg, base / bold
                 if reg_p.exists() and bold_p.exists():
-                    pdfmetrics.registerFont(TTFont(f"{fam}", str(reg_p)))
-                    pdfmetrics.registerFont(TTFont(f"{fam}-Bold", str(bold_p)))
-                    # family 등록(볼드 전환)
+                    pdfmetrics.registerFont(TTFont(fam_name, str(reg_p)))
+                    pdfmetrics.registerFont(TTFont(f"{fam_name}-Bold", str(bold_p)))
                     pdfmetrics.registerFontFamily(
-                        fam, normal=fam, bold=f"{fam}-Bold", italic=fam, boldItalic=f"{fam}-Bold"
+                        fam_name,
+                        normal=fam_name,
+                        bold=f"{fam_name}-Bold",
+                        italic=fam_name,
+                        boldItalic=f"{fam_name}-Bold",
                     )
-                    return fam  # 사용 가능한 패밀리명 반환
+                    return fam_name
         except Exception:
             continue
-    # fallback (영문만): 한글은 깨질 수 있음
     return "Helvetica"
 
 _KR_FONT = _register_korean_fonts()
 
-
-# ---- 페이로드 스키마 (기존 title/content 호환 + 구조화 입력 지원) ----
-class CoverageItem(BaseModel):
-    item: str
-    covered: Optional[bool] = None  # True/False/None
-    note: Optional[str] = None
-
-class TimelineStep(BaseModel):
-    step: str
-    when: Optional[str] = None
-    note: Optional[str] = None
-
-class PdfPayload(BaseModel):
-    title: str = "상담 결과"
-    # 자유 텍스트 (기존 호환)
-    content: Optional[str] = None
-
-    # 구조화 섹션(선택)
-    summary: Optional[str] = None            # 사건 요약
-    likelihood: Optional[str] = None         # 청구 가능성
-    coverage_items: List[CoverageItem] = []  # 보험 적용 항목(메트릭스)
-    timeline: List[TimelineStep] = []        # 청구 타임라인
-    required_docs: List[str] = []            # 필요 서류 체크란
-    qr_url: Optional[str] = None             # 문의 QR
-    disclaimer: Optional[str] = None         # 하단 변책 고지
-
-# ---- 도우미 ----
+# =========================================
+# PDF 생성 보조 함수들
+# =========================================
 PAGE_W, PAGE_H = A4
 MARGIN_X = 40
 CURSOR_BOTTOM = 40
 
 def _wrap_lines(text: str, font: str, size: int, max_width: float) -> List[str]:
     """폰트 실제 폭 기준 줄바꿈."""
-    lines = []
-    for raw in (text or "").splitlines() or [""]:
+    if not text:
+        return [""]
+    lines: List[str] = []
+    for raw in text.splitlines() or [""]:
         buf = ""
         for ch in raw:
             if stringWidth(buf + ch, font, size) <= max_width:
@@ -189,15 +180,17 @@ def _wrap_lines(text: str, font: str, size: int, max_width: float) -> List[str]:
                 lines.append(buf)
                 buf = ch
         lines.append(buf)
-    return lines
+    return lines or [""]
+
+def _heading_font() -> str:
+    return f"{_KR_FONT}-Bold" if _KR_FONT != "Helvetica" else "Helvetica-Bold"
 
 def _draw_heading(c: canvas.Canvas, text: str, y: float):
-    c.setFont(f"{_KR_FONT}-Bold" if _KR_FONT != "Helvetica" else "Helvetica-Bold", 14)
+    c.setFont(_heading_font(), 14)
     c.drawString(MARGIN_X, y, text);  y -= 18
     return y
 
 def _draw_sep(c: canvas.Canvas, y: float, char: str = "-"):
-    # 요구사항: '-----' 또는 '=====' 형태로 구분선. 시각적 선도 함께 긋자.
     c.setLineWidth(0.6)
     c.line(MARGIN_X, y+2, PAGE_W - MARGIN_X, y+2)
     c.setFont(_KR_FONT, 9)
@@ -216,7 +209,7 @@ def _draw_paragraph(c: canvas.Canvas, text: str, y: float, font_size: int = 11, 
 def _draw_list(c: canvas.Canvas, items: List[str], y: float, bullet: str = "•", font_size: int = 11):
     c.setFont(_KR_FONT, font_size)
     max_w = PAGE_W - 2 * MARGIN_X - 14
-    for s in items:
+    for s in items or []:
         lines = _wrap_lines(s, _KR_FONT, font_size, max_w)
         c.drawString(MARGIN_X, y, bullet)
         c.drawString(MARGIN_X + 12, y, lines[0]); y -= 16
@@ -226,45 +219,6 @@ def _draw_list(c: canvas.Canvas, items: List[str], y: float, bullet: str = "•"
             c.showPage(); y = PAGE_H - 50; c.setFont(_KR_FONT, font_size)
     return y
 
-def _draw_coverage(c: canvas.Canvas, items: List[CoverageItem], y: float):
-    # 간단한 메트릭스: [항목] [적용여부/메모]
-    c.setFont(f"{_KR_FONT}-Bold" if _KR_FONT != "Helvetica" else "Helvetica-Bold", 11)
-    c.drawString(MARGIN_X, y, "보험 적용 항목"); y -= 16
-    c.setFont(_KR_FONT, 11)
-    for it in items:
-        tag = "✅ 적용" if it.covered is True else ("❌ 비적용" if it.covered is False else "◻︎")
-        line = f"- {it.item}  ({tag})"
-        if it.note:
-            line += f" – {it.note}"
-        y = _draw_paragraph(c, line, y, font_size=11)
-        if y < CURSOR_BOTTOM:
-            c.showPage(); y = PAGE_H - 50
-    return y
-
-def _draw_timeline(c: canvas.Canvas, steps: List[TimelineStep], y: float):
-    c.setFont(f"{_KR_FONT}-Bold" if _KR_FONT != "Helvetica" else "Helvetica-Bold", 11)
-    c.drawString(MARGIN_X, y, "보험 청구 타임라인"); y -= 16
-    c.setFont(_KR_FONT, 11)
-    for idx, stp in enumerate(steps, 1):
-        head = f"{idx}. {stp.step}"
-        if stp.when: head += f"  ({stp.when})"
-        y = _draw_paragraph(c, head, y, font_size=11)
-        if stp.note:
-            y = _draw_paragraph(c, f"   - {stp.note}", y, font_size=10)
-        if y < CURSOR_BOTTOM:
-            c.showPage(); y = PAGE_H - 50
-    return y
-
-def _draw_required_docs(c: canvas.Canvas, docs: List[str], y: float):
-    c.setFont(f"{_KR_FONT}-Bold" if _KR_FONT != "Helvetica" else "Helvetica-Bold", 11)
-    c.drawString(MARGIN_X, y, "필요 서류 체크"); y -= 16
-    c.setFont(_KR_FONT, 11)
-    for d in docs:
-        y = _draw_paragraph(c, f"□ {d}", y, font_size=11)
-        if y < CURSOR_BOTTOM:
-            c.showPage(); y = PAGE_H - 50
-    return y
-
 def _draw_qr(c: canvas.Canvas, url: str, x: float, y: float, size: int = 90):
     q = qr.QrCodeWidget(url)
     b = q.getBounds(); w = b[2] - b[0]; h = b[3] - b[1]
@@ -272,13 +226,41 @@ def _draw_qr(c: canvas.Canvas, url: str, x: float, y: float, size: int = 90):
     d.add(q)
     renderPDF.draw(d, c, x, y)
 
-# ---- 교체할 엔드포인트 ----
+# =========================================
+# PDF 페이로드 스키마
+#  - title/content (자유 텍스트) 호환
+#  - 추가 섹션 필드 지원
+# =========================================
+class CoverageItem(BaseModel):
+    item: str
+    covered: Optional[bool] = None
+    note: Optional[str] = None
+
+class TimelineStep(BaseModel):
+    step: str
+    when: Optional[str] = None
+    note: Optional[str] = None
+
+class PdfPayload(BaseModel):
+    title: str = "상담 결과"
+    content: Optional[str] = None           # 부록(자유 텍스트)
+    summary: Optional[str] = None           # 사건 요약
+    likelihood: Optional[str] = None        # 청구 가능성
+    coverage_items: List[CoverageItem] = [] # 보험 적용 항목
+    timeline: List[TimelineStep] = []       # 청구 타임라인
+    required_docs: List[str] = []           # 필요 서류 체크
+    qr_url: Optional[str] = None            # 하단 QR
+    disclaimer: Optional[str] = None        # 변책 고지
+
+# =========================================
+# /export/pdf : 프론트에서 바로 다운로드 버튼 띄우는 용도
+# =========================================
 @app.post("/export/pdf")
 def export_pdf(payload: PdfPayload):
     """
-    - 기존: title/content만 받아 본문 출력
-    - 확장: 구조화 필드를 주면 섹션 레이아웃으로 생성
-    - 한글 폰트 내장, 구분선, QR, 하단 고지 포함
+    - title/content만 던져도 동작
+    - summary/likelihood/coverage_items/timeline/required_docs/qr_url/disclaimer 지원
+    - 한글 폰트 자동 등록
     """
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -287,10 +269,10 @@ def export_pdf(payload: PdfPayload):
     y = PAGE_H - 50
 
     # 제목
-    c.setFont(f"{_KR_FONT}-Bold" if _KR_FONT != "Helvetica" else "Helvetica-Bold", 16)
+    c.setFont(_heading_font(), 16)
     c.drawString(MARGIN_X, y, payload.title); y -= 24
 
-    # ===== 상단: 사건 요약, 청구 가능성 =====
+    # 상단: 사건 요약/청구 가능성
     if payload.summary or payload.likelihood:
         y = _draw_sep(c, y, "=")
         y = _draw_heading(c, "사건 요약 / 청구 가능성", y)
@@ -299,29 +281,46 @@ def export_pdf(payload: PdfPayload):
         if payload.likelihood:
             y = _draw_paragraph(c, f"청구 가능성: {payload.likelihood}", y)
 
-    # ===== 본론: 적용 항목/타임라인/필요서류 =====
+    # 본론: 적용 항목/타임라인/필요서류
     if payload.coverage_items or payload.timeline or payload.required_docs:
         y = _draw_sep(c, y, "-")
         y = _draw_heading(c, "본론", y)
 
         if payload.coverage_items:
-            y = _draw_coverage(c, payload.coverage_items, y);  y -= 6
+            c.setFont(_heading_font(), 11)
+            c.drawString(MARGIN_X, y, "보험 적용 항목"); y -= 16
+            for it in payload.coverage_items:
+                tag = "✅ 적용" if it.covered is True else ("❌ 비적용" if it.covered is False else "◻︎")
+                line = f"- {it.item}  ({tag})" + (f" – {it.note}" if it.note else "")
+                y = _draw_paragraph(c, line, y, font_size=11)
+            y -= 6
 
         if payload.timeline:
             y -= 4
-            y = _draw_timeline(c, payload.timeline, y);  y -= 6
+            c.setFont(_heading_font(), 11)
+            c.drawString(MARGIN_X, y, "보험 청구 타임라인"); y -= 16
+            for idx, stp in enumerate(payload.timeline, 1):
+                head = f"{idx}. {stp.step}" + (f"  ({stp.when})" if stp.when else "")
+                y = _draw_paragraph(c, head, y, font_size=11)
+                if stp.note:
+                    y = _draw_paragraph(c, f"   - {stp.note}", y, font_size=10)
+            y -= 6
 
         if payload.required_docs:
             y -= 4
-            y = _draw_required_docs(c, payload.required_docs, y);  y -= 6
+            c.setFont(_heading_font(), 11)
+            c.drawString(MARGIN_X, y, "필요 서류 체크"); y -= 16
+            for d in payload.required_docs:
+                y = _draw_paragraph(c, f"□ {d}", y, font_size=11)
+            y -= 6
 
-    # 자유 텍스트(content)도 들어오면 맨 끝에 부록처럼 추가
+    # 부록(자유 텍스트)
     if payload.content:
         y = _draw_sep(c, y, "-")
         y = _draw_heading(c, "부록", y)
         y = _draw_paragraph(c, payload.content, y)
 
-    # ===== 하단: QR + 변책 고지 =====
+    # 하단: QR + 변책 고지
     y = _draw_sep(c, y, "=")
     if payload.qr_url:
         _draw_qr(c, payload.qr_url, PAGE_W - MARGIN_X - 90, max(y - 90, 60))
