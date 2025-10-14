@@ -1,4 +1,4 @@
-# app/services/rag_service.py
+# back/app/services/rag_service.py
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Union
 import re
@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 from app.services.vector_search import retrieve_context_base
-from app.services.embeddings_sbert import SBERTEmbedder  # ← 네 프로젝트 파일명으로 맞춤
+from app.services.embeddings_sbert import SBERTEmbedder  # ← 네 프로젝트 파일명
 
 # DB 세션 스코프
 @contextmanager
@@ -41,8 +41,22 @@ def _insurer_ok(chunk: Dict[str, Any], want: Optional[str]) -> bool:
     ins = _norm_insurer(ins_raw)
     return ins in {want, "공통"}
 
+# 히트 → 문자열 블럭 포맷
+def _format_blocks(hits: List[Dict[str, Any]]) -> str:
+    blocks: List[str] = []
+    for h in hits:
+        # 파일/페이지 메타 추출(없으면 안전한 기본값)
+        file_name = (h.get("file_name") or h.get("doc_id") or "document").strip()
+        page = str(h.get("page") or h.get("page_no") or "?").strip()
+        content = (h.get("content") or h.get("chunk_text") or "").strip()
+        # 라우터가 기대하는 포맷: "(파일 p.페이지)\n텍스트"
+        block = f"({file_name} p.{page})\n{content}"
+        blocks.append(block)
+    # 라우터에서 split 하는 구분자
+    return "\n\n---\n\n".join(blocks)
+
 # 상위 후보 뽑기 + 보험사 필터
-def search_top_k(
+def _search_top_k(
     db: Session,
     query_vec: Sequence[float],
     insurer: Optional[str] = None,
@@ -57,7 +71,7 @@ def search_top_k(
     return hits[:top_k]
 
 # ─────────────────────────────────────────────────────────────
-# 공개 API: retrieve_context (폴리모픽)
+# 공개 API: retrieve_context (폴리모픽) → 문자열 컨텍스트 반환
 #   A) retrieve_context(question: str, insurer=..., top_k=...)
 #   B) retrieve_context(db: Session, query_vec: Sequence[float], insurer=..., top_k=...)
 # ─────────────────────────────────────────────────────────────
@@ -67,20 +81,22 @@ def retrieve_context(
     *,
     top_k: int = 5,
     insurer: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> str:
     # A) 라우터에서 문자열 질문으로 호출된 경우
     if isinstance(arg1, str):
         question: str = arg1
         insurer_in = insurer if insurer is not None else (arg2 if isinstance(arg2, str) else None)
         query_vec = SBERTEmbedder.embed([question])[0]
         with _session_scope() as db:
-            return search_top_k(db, query_vec, insurer=insurer_in, top_k=top_k)
+            hits = _search_top_k(db, query_vec, insurer=insurer_in, top_k=top_k)
+        return _format_blocks(hits)
 
     # B) 저수준 (db + query_vec)
     if isinstance(arg1, Session) and isinstance(arg2, (list, tuple)):
         db: Session = arg1
         query_vec: Sequence[float] = arg2
-        return search_top_k(db, query_vec, insurer=insurer, top_k=top_k)
+        hits = _search_top_k(db, query_vec, insurer=insurer, top_k=top_k)
+        return _format_blocks(hits)
 
     raise TypeError(
         "retrieve_context 사용법: "
