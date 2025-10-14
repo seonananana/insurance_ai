@@ -15,19 +15,59 @@ DEFAULT_TEMP = 0.3
 DEFAULT_MAXTOK = 512
 
 # ---------------------------
+# CSS
+# ---------------------------
+def inject_css(css: str):
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+inject_css("""
+html, body, [class*="stApp"] { font-family: 'Noto Sans KR', system-ui, -apple-system, sans-serif; }
+h1, h2, h3 { letter-spacing: -0.3px; }
+section[data-testid="stSidebar"] { width: 320px !important; }
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 12px; }
+div[data-testid="stChatMessage"] {
+  border: 1px solid #eee; border-radius: 16px; padding: 10px 14px; margin: 8px 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04); background: #fff;
+}
+div[data-testid="stChatMessage"] pre { background: #f7f8fb; }
+div[data-testid="stChatInput"] {
+  position: sticky; bottom: 0; z-index: 5; background: rgba(255,255,255,0.92);
+  backdrop-filter: saturate(1.8) blur(6px); border-top: 1px solid #eee;
+}
+div.block-container { max-width: 1000px; padding-top: 18px; }
+button, .stDownloadButton, .stLinkButton { border-radius: 10px !important; }
+small, .stCaption { color: #6b7280 !important; }
+""")
+
+# ---------------------------
 # 상태
 # ---------------------------
 def ensure_state():
     ss = st.session_state
-    ss.setdefault("messages", [])           # [{"role":..., "content":..., "meta":{...}}]
-    ss.setdefault("insurer", None)          # 선택값을 여기에 '직접' 저장
+    # 기존 단일 메시지 -> 보험사별로 1회 마이그레이션
+    if "messages_by_insurer" not in ss:
+        ss["messages_by_insurer"] = {}
+        if ss.get("messages"):  # 예전 데이터가 있으면 현재 선택 보험사로 귀속
+            owner = ss.get("insurer") or "기본"
+            ss["messages_by_insurer"][owner] = ss["messages"]
+        ss["messages"] = []  # 더는 사용하지 않음
+
+    ss.setdefault("insurer", None)  # 선택 박스 값이 여기에 직접 들어옴
     ss.setdefault("top_k", 3)
     ss.setdefault("temperature", DEFAULT_TEMP)
     ss.setdefault("max_tokens", DEFAULT_MAXTOK)
+
 ensure_state()
 
+def _cur_messages():
+    """현재 선택된 보험사의 메시지 리스트를 반환(없으면 생성)."""
+    company = st.session_state.insurer
+    if company not in st.session_state.messages_by_insurer:
+        st.session_state.messages_by_insurer[company] = []
+    return st.session_state.messages_by_insurer[company]
+
 # ---------------------------
-# 공통 HTTP
+# HTTP 공통
 # ---------------------------
 def post_json(url: str, payload: dict, timeout=(20, 180)):
     try:
@@ -43,18 +83,16 @@ def post_json(url: str, payload: dict, timeout=(20, 180)):
 with st.sidebar:
     st.subheader("⚙️ 설정")
 
-    # 보험사 선택: key='insurer' 로 세션에 직접 저장
     options = ["선택하세요…"] + INSURERS
     default_idx = options.index(st.session_state.insurer) if st.session_state.insurer in options else 0
     st.selectbox(
         "보험사",
         options,
         index=default_idx,
-        key="insurer",
+        key="insurer",  # 선택값이 곧 세션 상태
         help="검색에 사용할 문서를 어느 보험사 것으로 제한할지 선택합니다.",
     )
 
-    # 슬라이더/버튼
     st.session_state.top_k = st.slider(
         "Top-K (근거 개수)", 1, 10, st.session_state.get("top_k", 3),
         help="질문과 가장 유사한 문서 조각을 몇 개까지 불러올지입니다. 높을수록 느려질 수 있습니다."
@@ -118,18 +156,15 @@ def render_overlay():
         unsafe_allow_html=True
     )
 
-#衍생 상태: 선택 여부를 '항상' 계산
 insurer_selected = st.session_state.insurer in INSURERS
-
-# 미선택이면 오버레이만 그리고 아래 실행 중단 → 선택 즉시 자동 리런 후 채팅창 활성화
 if not insurer_selected:
     render_overlay()
     st.stop()
 
 # ---------------------------
-# 채팅 메시지 렌더
+# 채팅 메시지 렌더(선택 보험사 전용)
 # ---------------------------
-for msg in st.session_state.messages:
+for msg in _cur_messages():
     with st.chat_message("user" if msg["role"] == "user" else "assistant"):
         st.markdown(msg["content"])
         meta = msg.get("meta") or {}
@@ -155,10 +190,11 @@ for msg in st.session_state.messages:
                 st.download_button("📄 PDF 다운로드", data=pdf_bytes, file_name="rag_answer.pdf", mime="application/pdf")
 
 # ---------------------------
-# 호출 함수
+# 호출 함수(선택 보험사 스레드에만 기록)
 # ---------------------------
 def send_normal_chat(user_text: str):
-    st.session_state.messages.append({"role": "user", "content": user_text})
+    msgs = _cur_messages()
+    msgs.append({"role": "user", "content": user_text})
     payload = {
         "messages": [{"role": "user", "content": user_text}],
         "insurer": st.session_state.insurer,
@@ -168,13 +204,14 @@ def send_normal_chat(user_text: str):
     }
     r, err = post_json(f"{API_BASE}/chat/completion", payload)
     if err:
-        st.session_state.messages.append({"role": "assistant", "content": f"❌ 요청 실패: {err}"})
+        msgs.append({"role": "assistant", "content": f"❌ 요청 실패: {err}"})
         return
     reply = r.json().get("reply") or "⚠️ 빈 응답입니다."
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+    msgs.append({"role": "assistant", "content": reply})
 
 def send_answer_pdf(user_text: str):
-    st.session_state.messages.append({"role": "user", "content": f"(PDF 요청) {user_text}"})
+    msgs = _cur_messages()
+    msgs.append({"role": "user", "content": f"(PDF 요청) {user_text}"})
     payload = {
         "question": user_text,
         "policy_type": st.session_state.insurer,
@@ -185,12 +222,12 @@ def send_answer_pdf(user_text: str):
         r = requests.post(f"{API_BASE}/qa/answer_pdf", json=payload, timeout=(20, 180))
         r.raise_for_status()
     except requests.RequestException as e:
-        st.session_state.messages.append({"role": "assistant", "content": f"❌ PDF 생성 실패: {e}"})
+        msgs.append({"role": "assistant", "content": f"❌ PDF 생성 실패: {e}"})
         return
 
     ctype = r.headers.get("content-type", "").lower()
     if ctype.startswith("application/pdf"):
-        st.session_state.messages.append({
+        msgs.append({
             "role": "assistant",
             "content": "PDF가 생성되었습니다. 아래 버튼으로 내려받으세요.",
             "meta": {"pdf": {"bytes": r.content}}
@@ -200,7 +237,7 @@ def send_answer_pdf(user_text: str):
         answer = data.get("answer") or "요약이 제공되지 않았습니다."
         sources = data.get("sources") or []
         pdf_url = data.get("pdf_url")
-        st.session_state.messages.append({
+        msgs.append({
             "role": "assistant",
             "content": answer,
             "meta": {"sources": sources, "pdf": {"url": pdf_url} if pdf_url else None}
@@ -209,18 +246,17 @@ def send_answer_pdf(user_text: str):
 # ---------------------------
 # 입력창 & 사이드바 액션 처리
 # ---------------------------
-user_input = st.chat_input("질문을 입력하고 Enter를 누르세요…", disabled=not insurer_selected)
+user_input = st.chat_input(
+    f"[{st.session_state.insurer}] 질문을 입력하고 Enter를 누르세요…",
+    disabled=not insurer_selected,
+)
 if user_input:
     send_normal_chat(user_input)
     st.rerun()   # 전송 직후 즉시 렌더 반영
 
 if 'make_pdf_clicked' in locals() and make_pdf_clicked:
-    # 최근 사용자 질문 찾기
-    last_user = None
-    for m in reversed(st.session_state.messages):
-        if m["role"] == "user" and not m["content"].startswith("(PDF 요청)"):
-            last_user = m["content"]
-            break
+    last_user = next((m["content"] for m in reversed(_cur_messages())
+                      if m["role"] == "user" and not m["content"].startswith("(PDF 요청)")), None)
     if not last_user:
         st.warning("먼저 질문을 입력해 주세요.")
     else:
@@ -228,5 +264,5 @@ if 'make_pdf_clicked' in locals() and make_pdf_clicked:
         st.rerun()   # PDF 생성 후 즉시 반영
 
 if 'clear_clicked' in locals() and clear_clicked:
-    st.session_state.messages = []
+    st.session_state.messages_by_insurer[st.session_state.insurer] = []
     st.rerun()
