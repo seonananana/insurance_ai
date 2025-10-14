@@ -5,3 +5,7 @@ python-dotenv
 psycopg2-binary
 sqlalchemy
 fpdf2>=2.7.8
+sentence-transformers>=2.6.0
+torch>=2.1.0
+faiss-cpu>=1.7.4
+numpy>=1.24
