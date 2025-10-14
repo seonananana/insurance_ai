@@ -270,3 +270,4 @@ if make_pdf:
 if clear_chat:
     ss.messages_by_insurer[ss.insurer] = []
     st.rerun()
+    
