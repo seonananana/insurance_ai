@@ -144,3 +144,7 @@ class SBertEmbeddings:
             show_progress_bar=show_progress_bar,
         )
         return vecs.tolist()
+
+# ✅ 기존 코드와의 호환을 위한 별칭
+SBERTEmbedder = SBertEmbeddings
+__all__ = ["SBertEmbeddings", "SBERTEmbedder"]
