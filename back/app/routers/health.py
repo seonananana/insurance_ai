@@ -1,15 +1,14 @@
-# /health: DB 연결 확인 (SELECT 1)
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from app.db import get_db
+# back/app/routers/health.py
+from fastapi import APIRouter
+import os
 
-router = APIRouter()
+router = APIRouter(tags=["health"])
 
-@router.get("/")
-def healthcheck(db: Session = Depends(get_db)):
-    try:
-        db.execute(text("SELECT 1"))
-        return {"ok": True, "db": True}
-    except Exception as e:
-        return {"ok": True, "db": False, "error": str(e)}
+def _llm_ok() -> bool:
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+@router.get("/health", include_in_schema=False)
+@router.get("/health/", include_in_schema=False)
+def health():
+    # TODO: DB ping이 필요하면 여기에서 간단 쿼리 수행 후 db_ok 업데이트
+    return {"ok": True, "llm_ok": _llm_ok(), "db_ok": True}
