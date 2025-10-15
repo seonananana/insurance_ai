@@ -13,7 +13,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # 라우터
-from app.routers import health, qa, chat
+from app.routers import health, qa
+try:
+    from app.routers import chat         # (있으면 사용, 내부 prefix="/chat" 가정)
+except Exception:
+    chat = None
 try:
     from app.routers import report       # (있으면 사용, 내부 prefix="/qa" 가정)
 except Exception:
@@ -36,7 +40,11 @@ from reportlab.graphics import renderPDF
 # =========================================
 # 앱 & 정적 파일
 # =========================================
-app = FastAPI(title="Insurance RAG API", version="0.3.0")
+app = FastAPI(
+    title="Insurance RAG API",
+    version="0.3.1",
+    redirect_slashes=False,  # 🔧 /health 307 리다이렉트 방지
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # back/app -> back
 FILES_DIR = Path(os.getenv("FILES_DIR", BASE_DIR / "files")).resolve()
@@ -53,31 +61,33 @@ app.add_middleware(
         "http://127.0.0.1:8501",
         "http://localhost:8502",
         "http://127.0.0.1:8502",
+        "*",  # 필요시 제거 가능
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # =========================================
 # 라우터 등록
-#  - health: 내부 prefix 없음 → 여기서 '/health' 부여
-#  - qa:     내부에서 prefix="/qa"를 이미 사용 → 여기서 prefix 추가 금지
+#  - health: 라우터 내부에서 /health 및 /health/ 처리 → 여기서 prefix **추가 금지**
+#  - qa:     내부에서 prefix="/qa" 사용 → 그대로 등록
 #  - chat:   내부에서 prefix="/chat" 사용 → 그대로 등록
 #  - report, chatlog: 있으면 등록
 # =========================================
-app.include_router(health.router, prefix="/health", tags=["health"])
-app.include_router(qa.router)         # ⚠️ qa.py에 prefix="/qa"가 이미 있는 형태에 맞춤
-app.include_router(chat.router)       # chat.py가 prefix="/chat"을 갖고 있다고 가정
+app.include_router(health.router)  # ✅ prefix 주지 마세요 (기존 /health/health 문제 원인)
+app.include_router(qa.router)      # qa.py에 prefix="/qa"가 이미 있음
+if chat:
+    app.include_router(chat.router)
+if report:
+    app.include_router(report.router)
+if chatlog:
+    app.include_router(chatlog.router)
 
-if report is not None:
-    app.include_router(report.router)  # report.py가 내부에서 prefix="/qa" 사용한다고 가정
-if chatlog is not None:
-    app.include_router(chatlog.router) # chatlog.py가 내부에서 prefix="/chat"
-
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def root():
-    return {"ok": True, "service": "Insurance RAG API"}
+    return {"ok": True, "service": "Insurance RAG API", "version": app.version}
 
 # =========================================
 # 폰트 등록 유틸
@@ -228,8 +238,6 @@ def _draw_qr(c: canvas.Canvas, url: str, x: float, y: float, size: int = 90):
 
 # =========================================
 # PDF 페이로드 스키마
-#  - title/content (자유 텍스트) 호환
-#  - 추가 섹션 필드 지원
 # =========================================
 class CoverageItem(BaseModel):
     item: str
@@ -250,7 +258,7 @@ class PdfPayload(BaseModel):
     timeline: List[TimelineStep] = []       # 청구 타임라인
     required_docs: List[str] = []           # 필요 서류 체크
     qr_url: Optional[str] = None            # 하단 QR
-    disclaimer: Optional[str] = None        # 변책 고지
+    disclaimer: Optional[str] = None        # 면책 고지
 
 # =========================================
 # /export/pdf : 프론트에서 바로 다운로드 버튼 띄우는 용도
@@ -320,7 +328,7 @@ def export_pdf(payload: PdfPayload):
         y = _draw_heading(c, "부록", y)
         y = _draw_paragraph(c, payload.content, y)
 
-    # 하단: QR + 변책 고지
+    # 하단: QR + 면책 고지
     y = _draw_sep(c, y, "=")
     if payload.qr_url:
         _draw_qr(c, payload.qr_url, PAGE_W - MARGIN_X - 90, max(y - 90, 60))
@@ -335,3 +343,27 @@ def export_pdf(payload: PdfPayload):
     buf.seek(0)
     headers = {"Content-Disposition": 'attachment; filename="answer.pdf"'}
     return StreamingResponse(buf, media_type="application/pdf", headers=headers)
+
+# =========================================
+# Startup: SBERT 임베더 프리워밍 (첫 요청 지연/에러 완화)
+# =========================================
+@app.on_event("startup")
+def _warmup():
+    try:
+        from app.services.rag_service import _get_embedder  # type: ignore
+        _ = _get_embedder()
+        print("[startup] ✅ SBERT embedder loaded")
+    except Exception as e:
+        print("[startup] ⚠️ Embedder warmup failed:", e)
+
+# =========================================
+# 로컬 실행 헬퍼 (python app/main.py 로 실행 시)
+# =========================================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=os.getenv("RELOAD", "1") == "1",
+    )
