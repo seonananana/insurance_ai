@@ -1,131 +1,76 @@
-# front/main.py
 import os
+import json
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
-# ===================== 기본 설정 =====================
-st.set_page_config(page_title="보험 문서 RAG", page_icon="🧾", layout="wide", initial_sidebar_state="expanded")
+# ─────────────────────────────────────────────────────────────
+# 기본 설정
+# ─────────────────────────────────────────────────────────────
+st.set_page_config(page_title="보험 RAG 플랫폼", layout="wide", initial_sidebar_state="expanded")
 
 API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE") or "http://localhost:8000"
-INSURERS = ["DB손해", "현대해상", "삼성화재"]
+INSURERS = ["현대해상", "DB손해보험", "삼성화재"]
 
 ss = st.session_state
-ss.setdefault("messages_by_insurer", {})
-ss.setdefault("insurer", "현대해상")
-ss.setdefault("top_k", 3)
-ss.setdefault("temperature", 0.30)   # 현재 /qa/ask엔 미사용이지만 UI에서 보관
-ss.setdefault("max_tokens", 512)
 
+# --- 보험사별 메시지 저장소 (대화 유지용)
+if "messages_by_insurer" not in ss:
+    ss["messages_by_insurer"] = {}
+
+# --- 보험사 (최초만 현대해상으로 지정, 이후 변경 유지)
+if "insurer" not in ss:
+    ss["insurer"] = "현대해상"
+
+# --- 보험사별 메시지 버퍼 생성 (없으면 새로)
+if ss["insurer"] not in ss["messages_by_insurer"]:
+    ss["messages_by_insurer"][ss["insurer"]] = []
+
+# --- 기타 설정 (최초 실행 시만 초기화)
+if "top_k" not in ss:
+    ss["top_k"] = 5
+if "temperature" not in ss:
+    ss["temperature"] = 0.30
+if "max_tokens" not in ss:
+    ss["max_tokens"] = 512
+if "auto_pdf" not in ss:
+    ss["auto_pdf"] = True
+
+
+# --- 헬퍼 함수: 현재 보험사별 메시지 접근
 def _msgs():
-    k = ss.insurer
-    ss.messages_by_insurer.setdefault(k, [])
-    return ss.messages_by_insurer[k]
+    return ss["messages_by_insurer"][ss["insurer"]]
 
-# ===================== CSS (통합 고정본) =====================
-def inject_css(css: str): st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+def inject_css(css: str):
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 inject_css("""
-:root{
-  --page-max: 1000px;
-  --page-pad: 16px;
-  --btn-size: 36px;
-  --btn-gap: 8px;
-  --btn-inset: 16px;
+:root{ --page-max: 1100px; --page-pad: 16px; }
+#MainMenu, header, footer {display:none !important;}
+section[data-testid="stSidebar"], div[data-testid="stSidebar"] {
+  visibility:visible !important; opacity:1 !important; transform:none !important;
+  display:flex !important; width:320px !important;
 }
-#MainMenu, header, footer,
-div[data-testid="stToolbar"],
-div[data-testid="stDecoration"],
-div[data-testid="stDeployButton"] { display:none !important; }
-
-div.block-container{
+div.block-container {
   max-width: var(--page-max);
-  padding: 18px var(--page-pad) 0 var(--page-pad);
+  padding: 18px var(--page-pad) 24px var(--page-pad);
   font-family: 'Noto Sans KR', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
-.page-hero{
-  width:100%; background:#2563EB; color:#fff;
-  padding:22px 24px; border-radius:16px;
-  font-weight:800; font-size:34px; letter-spacing:-0.3px; margin-bottom:12px;
-}
-
+.page-hero { width:100%; background:#2563EB; color:#fff; padding:20px 22px; border-radius:16px;
+  font-weight:800; font-size:28px; letter-spacing:-0.3px; margin-bottom:12px; }
 div[data-testid="stChatMessage"]{
   border:1px solid #eee; border-radius:16px; padding:10px 14px; margin:8px 0;
   box-shadow:0 2px 10px rgba(0,0,0,.04); background:#fff;
 }
-
-/* 입력창 고정 & 버튼 정렬 */
-div[data-testid="stChatInput"]{
-  position: sticky; bottom:0; z-index:5;
-  background:rgba(255,255,255,.92);
-  border-top:0 !important; padding:0;
+blockquote {
+  border-left:4px solid #2563EB; padding-left:12px; color:#374151;
+  background:#f9fafb; margin:6px 0 12px 0;
 }
-div[data-testid="stChatInput"] > div{
-  max-width: var(--page-max); margin: 0 auto; padding: 0 var(--page-pad);
-}
-div[data-testid="stChatInput"] > div,
-div[data-testid="stChatInput"] > div > div,
-div[data-testid="stChatInput"] form{
-  background: transparent !important; border:0 !important; box-shadow:none !important;
-}
-div[data-testid="stChatInput"] label svg,
-div[data-testid="stChatInput"] label [role="img"],
-div[data-testid="stChatInput"] label [data-testid*="icon"]{
-  display:none !important; width:0 !important; height:0 !important; opacity:0 !important;
-  visibility:hidden !important; pointer-events:none !important; margin:0 !important;
-}
-div[data-testid="stChatInput"] textarea,
-div[data-testid="stChatInput"] input[type="text"]{
-  width:100% !important; box-sizing:border-box !important; min-height:44px;
-  padding-right: calc(var(--btn-size) + var(--btn-inset) + var(--btn-gap)) !important;
-  border:1px solid #e5e7eb !important; border-radius:12px !important;
-}
-div[data-testid="stChatInput"] form{ position:relative; }
-div[data-testid="stChatInput"] [data-testid="stChatInputSubmitButton"],
-div[data-testid="stChatInput"] form button:last-of-type{
-  position:absolute !important;
-  right: calc(var(--page-pad) + var(--btn-gap)) !important;
-  top:50% !important; transform: translateY(-50%) !important;
-  width: var(--btn-size) !important; height: var(--btn-size) !important;
-  padding:0 !important; border-radius:10px !important;
-  display:flex !important; align-items:center !important; justify-content:center !important;
-  z-index: 2;
-  margin-right: var(--btn-inset) !important;
-}
-div[data-testid="stChatInput"] [data-testid="stChatInputSubmitButton"] svg,
-div[data-testid="stChatInput"] form button:last-of-type svg{
-  width:18px !important; height:18px !important; display:inline-block !important;
-  opacity:1 !important; visibility:visible !important;
-}
-
-/* 사이드바 폭 */
-section[data-testid="stSidebar"]{ width:320px !important; }
+kbd{ background:#f3f4f6; border:1px solid #e5e7eb; border-bottom-width:2px; padding:2px 6px; border-radius:6px; }
 """)
 
-# ===================== 사이드바 =====================
-with st.sidebar:
-    st.subheader("⚙️ 설정")
-    st.selectbox("보험사", INSURERS, key="insurer")
-    st.write("Top-K (근거 개수)")
-    st.slider("Top-K", 1, 10, key="top_k", label_visibility="collapsed")
-    st.write("온도(창의성)")
-    st.slider("온도", 0.0, 1.0, step=0.01, key="temperature", label_visibility="collapsed")
-    st.write("최대 토큰")
-    st.slider("max tokens", 128, 2048, step=64, key="max_tokens", label_visibility="collapsed")
-    c1, c2 = st.columns(2)
-    with c1: make_pdf = st.button("📄 PDF 생성", use_container_width=True)
-    with c2: clear_chat = st.button("🗑️ 대화 지우기", use_container_width=True)
-    st.caption(f"API_BASE: {API_BASE}")
-
-# ===================== 헤더 =====================
-st.markdown('<div class="page-hero">보험 문서 RAG 플랫폼</div>', unsafe_allow_html=True)
-
-# ===================== 기존 메시지 렌더 =====================
-for m in _msgs():
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-# ===================== 공통 HTTP 유틸 =====================
-def _post(url, payload, timeout=(20,180)):
+def _post(url, payload, timeout=(20, 180)):
     try:
         r = requests.post(url, json=payload, timeout=timeout)
         r.raise_for_status()
@@ -133,19 +78,45 @@ def _post(url, payload, timeout=(20,180)):
     except requests.RequestException as e:
         return None, str(e)
 
-# ===================== 소스 파싱/렌더 =====================
-def _split_sources_from_context(ctx_text: str):
+def _get(url, timeout=(10, 30)):
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+# ─────────────────────────────────────────────────────────────
+# 참조 문서 정규화 (PDF 기반)
+# ─────────────────────────────────────────────────────────────
+def _normalize_references(resp_json: dict):
+    refs = []
+    if isinstance(resp_json.get("references"), list):
+        # ✅ 새로운 백엔드 (rag_service) 구조 대응
+        for it in resp_json["references"]:
+            fname = it.get("file_name") or it.get("doc_id") or it.get("title") or "문서"
+            page = it.get("page") or it.get("page_no")
+            score = it.get("score")
+            snippet = it.get("content") or it.get("text") or it.get("snippet") or ""
+            title = f"{fname} (p.{page})" if page else fname
+            refs.append({"title": title, "snippet": snippet.strip(), "score": score})
+        return refs
+
+    # ✅ context 기반 (구버전 호환)
+    ctx_text = resp_json.get("context") or ""
     if not ctx_text:
         return []
     blocks = [b for b in ctx_text.split("\n\n---\n\n") if b.strip()]
-    out = []
     for i, b in enumerate(blocks, 1):
         lines = b.splitlines()
-        title = lines[0][:160] if lines else f"근거 {i}"
-        snippet = b if len(b) <= 600 else (b[:600] + "…")
-        out.append({"title": title, "snippet": snippet, "score": None})
-    return out
+        title = (lines[0] if lines else f"근거 {i}")[:160]
+        snippet = b
+        refs.append({"title": title, "snippet": snippet, "score": None})
+    return refs
 
+# ─────────────────────────────────────────────────────────────
+# 답변 + 근거 카드 렌더링
+# ─────────────────────────────────────────────────────────────
 def render_answer_card(answer: str, sources: list[dict] | None = None):
     with st.chat_message("assistant"):
         st.markdown(answer)
@@ -154,120 +125,196 @@ def render_answer_card(answer: str, sources: list[dict] | None = None):
                 for i, item in enumerate(sources, 1):
                     title = item.get("title") or "제목 없음"
                     score = item.get("score")
-                    snippet = item.get("snippet") or ""
-                    if len(snippet) > 320: snippet = snippet[:320] + "…"
-                    st.markdown(
-                        f"**{i}. {title}**" +
-                        (f" (score: {score})" if score is not None else "") +
-                        f"\n\n> {snippet}"
-                    )
+                    snippet = (item.get("snippet") or "").strip()
+                    if len(snippet) > 600:
+                        snippet = snippet[:600] + "…"
+                    meta = f" _(score: {score:.4f})_" if isinstance(score, (int, float)) else ""
+                    st.markdown(f"**{i}. {title}**{meta}\n\n> {snippet}")
 
-# ===================== RAG 호출 =====================
-def send_rag_chat(user_text: str):
-    log = _msgs()
-    log.append({"role":"user","content":user_text})
+# ─────────────────────────────────────────────────────────────
+# PDF 다운로드 함수 (변경 없음)
+# ─────────────────────────────────────────────────────────────
+def _download_pdf_via_browser(endpoint: str, payload: dict, filename: str = "report.pdf"):
+    url = f"{API_BASE.rstrip('/')}{endpoint}"
+    enriched = dict(payload)
+    enriched["return_mode"] = "stream"
 
-    payload = {
-        "query": user_text,
-        "policy_type": ss.insurer,
-        "top_k": int(ss.top_k),
-        "max_tokens": int(ss.max_tokens),
-    }
-    r, err = _post(f"{API_BASE}/qa/ask", payload, timeout=(20,180))
-    if err or r is None:
-        log.append({"role":"assistant","content": f"❌ 요청 실패: {err or 'no response'}"})
-        return
+    components.html(
+        f"""
+        <script>
+          (async () => {{
+            const url = {json.dumps(url)};
+            const body = {json.dumps(enriched, ensure_ascii=False)};
+            try {{
+              const res = await fetch(url, {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                credentials: 'include',
+                body: JSON.stringify(body)
+              }});
+              const ctype = (res.headers.get('content-type') || '').toLowerCase();
 
-    data = r.json()
-    answer = data.get("answer") or "⚠️ 빈 응답입니다."
-    ctx_text = data.get("context") or ""
-    sources = _split_sources_from_context(ctx_text)
+              if (res.ok && ctype.includes('application/pdf')) {{
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = {json.dumps(filename)};
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {{ URL.revokeObjectURL(a.href); a.remove(); }}, 1500);
+                return;
+              }}
 
-    # 세션 로그에는 요약(불릿)만 간단히 남김
-    extra = ""
-    if sources:
-        bullets = "\n".join([f"- {s['title']}" for s in sources[:3]])
-        extra = f"\n\n🔎 참조 문서 (Top-K)\n{bullets}"
-    log.append({"role":"assistant","content": answer + extra})
+              const data = await res.json().catch(() => ({{}}));
+              const abs = data.absolute_url;
+              const rel = data.file_url || data.url;
+              const dlUrl = abs || rel;
+              if (!dlUrl) throw new Error(data.error || 'no download url');
 
-    # 현재 렌더는 상세 카드로
-    render_answer_card(answer, sources)
-
-def send_pdf_from_question(question_text: str):
-    """
-    /qa/answer_pdf 에 질문을 던져 PDF(바이트)를 받아,
-    리런 없이 즉시 다운로드 버튼을 표시한다.
-    """
-    log = _msgs()
-    log.append({"role":"user","content": f"(PDF 요청) {question_text}"})
-
-    payload = {
-        "question": question_text,
-        "policy_type": ss.insurer,
-        "top_k": int(ss.top_k),
-        "max_tokens": int(ss.max_tokens),
-    }
-    try:
-        resp = requests.post(f"{API_BASE.rstrip('/')}/qa/answer_pdf",
-                             json=payload, timeout=300)
-        # 200이면서 JSON일 수도 있으니 content-type 확인
-        ctype = resp.headers.get("content-type","")
-        if not resp.ok:
-            raise requests.HTTPError(f"{resp.status_code} {resp.text}")
-    except requests.RequestException as e:
-        log.append({"role":"assistant","content": f"❌ PDF 생성 실패: {e}"})
-        return
-
-    if ctype.startswith("application/pdf"):
-        pdf_bytes = resp.content or b""
-        if not pdf_bytes:
-            log.append({"role":"assistant","content": "⚠️ PDF가 비어 있습니다. 서버 응답 확인 필요."})
-            return
-        log.append({"role":"assistant","content": "📄 PDF가 생성되었습니다. 아래 버튼으로 받으세요."})
-        with st.chat_message("assistant"):
-            st.download_button(
-                label="⬇️ PDF 다운로드",
-                data=pdf_bytes,
-                file_name="rag_answer.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary",
-            )
-        # 주의: 여기서 st.rerun() 호출하지 않음 (버튼 사라지는 문제 방지)
-    else:
-        # 백엔드가 fallback JSON을 준 경우
-        data = {}
-        try:
-            data = resp.json()
-        except Exception:
-            pass
-        msg = (data.get("answer") if isinstance(data, dict) else None) or "⚠️ PDF 생성에 실패했습니다."
-        log.append({"role":"assistant","content": msg})
-
-# ===================== 입력/버튼 액션 =====================
-insurer_selected = bool(ss.insurer)
-user_text = st.chat_input(
-    f"[{ss.insurer}] 질문을 입력하고 Enter를 누르세요…" if insurer_selected else "보험사를 먼저 선택하세요.",
-    disabled=not insurer_selected
-)
-if user_text:
-    send_rag_chat(user_text)
-    st.rerun()
-
-if make_pdf:
-    # 직전 "일반 질문"을 PDF 생성 질문으로 사용
-    last_user_q = next(
-        (m["content"] for m in reversed(_msgs())
-         if m["role"] == "user" and not m["content"].startswith("(PDF 요청)")),
-        ""
+              const res2 = await fetch(dlUrl, {{ credentials: 'include' }});
+              if (!res2.ok) throw new Error('HTTP ' + res2.status + ' on file url');
+              const blob2 = await res2.blob();
+              const a2 = document.createElement('a');
+              a2.href = URL.createObjectURL(blob2);
+              a2.download = (data.filename || {json.dumps(filename)});
+              document.body.appendChild(a2);
+              a2.click();
+              setTimeout(() => {{ URL.revokeObjectURL(a2.href); a2.remove(); }}, 1500);
+            }} catch (err) {{
+              const el = document.createElement('div');
+              el.style.color = 'red';
+              el.style.fontSize = '12px';
+              el.innerText = 'PDF 생성/다운로드 실패: ' + err;
+              document.body.appendChild(el);
+            }}
+          }})();
+        </script>
+        """,
+        height=0,
     )
-    if not last_user_q.strip():
-        with st.chat_message("assistant"):
-            st.warning("먼저 질문을 입력해 주세요.")
-    else:
-        send_pdf_from_question(last_user_q)
 
-if clear_chat:
-    ss.messages_by_insurer[ss.insurer] = []
-    st.rerun()
-    
+# ─────────────────────────────────────────────────────────────
+# 사이드바
+# ─────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.subheader("⚙️ 설정")
+    st.selectbox("보험사", INSURERS, key="insurer")
+    st.write("Top-K (근거 개수)")
+    st.slider("Top-K", 1, 10, key="top_k", label_visibility="collapsed")
+    st.toggle("답변 후 자동 PDF 저장", key="auto_pdf")
+    hc = _get(f"{API_BASE.rstrip('/')}/health/")
+    if isinstance(hc, dict):
+        llm_status = "ON" if hc.get("llm_ok", True) else "OFF"
+        db_status = "ON" if hc.get("db_ok", True) else "OFF"
+        st.caption(f"LLM: {llm_status}  ·  DB: {db_status}")
+    st.caption(f"API_BASE: {API_BASE}")
+
+# ─────────────────────────────────────────────────────────────
+# 메인
+# ─────────────────────────────────────────────────────────────
+st.markdown('<div class="page-hero">보험 문서 RAG 플랫폼</div>', unsafe_allow_html=True)
+tab_qna, tab_pdf = st.tabs(["💬 Q&A", "📄 PDF 생성(폼)"])
+
+# ─────────────────────────────────────────────────────────────
+# 💬 Q&A 탭
+# ─────────────────────────────────────────────────────────────
+with tab_qna:
+    for m in _msgs():
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    insurer_selected = bool(ss.insurer)
+    user_text = st.chat_input(
+        f"[{ss.insurer}] 질문을 입력하고 Enter를 누르세요…" if insurer_selected else "보험사를 먼저 선택하세요.",
+        disabled=not insurer_selected,
+    )
+
+    if user_text:
+        log = _msgs()
+        log.append({"role": "user", "content": user_text})
+
+        payload_ask = {
+            "query": user_text,
+            "policy_type": ss.insurer,
+            "top_k": int(ss.top_k),
+            "max_tokens": int(ss.max_tokens),
+            "temperature": float(ss.temperature),
+        }
+
+        r, err = _post(f"{API_BASE.rstrip('/')}/qa/ask", payload_ask, timeout=(20, 180))
+        if err or r is None:
+            log.append({"role": "assistant", "content": f"❌ 요청 실패: {err or 'no response'}"})
+            st.rerun()
+
+        data = r.json()
+        answer = data.get("answer") or "⚠️ 빈 응답입니다."
+        refs = _normalize_references(data)
+
+        # ✅ 참조 문서 리스트를 함께 표시
+        render_answer_card(answer, refs)
+
+        log.append({"role": "assistant", "content": answer})
+
+        # 자동 PDF 저장
+        if ss.auto_pdf:
+            detect_metas = [s["title"] for s in refs][: ss.top_k] if refs else []
+            pdf_payload = {
+                "question": user_text,
+                "policy_type": ss.insurer,
+                "top_k": int(ss.top_k),
+                "max_tokens": int(ss.max_tokens),
+                "temperature": float(ss.temperature),
+                "detect_metas": detect_metas,
+            }
+            _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="insurance_report.pdf")
+
+# ─────────────────────────────────────────────────────────────
+# 📄 PDF 생성(폼)
+# ─────────────────────────────────────────────────────────────
+with tab_pdf:
+    st.info("이 탭은 폼 기반 PDF 생성 탭입니다. Q&A 탭에서는 답변 후 자동으로 PDF가 저장·다운로드됩니다.")
+    st.markdown("#### 폼 입력")
+
+    title = st.text_input("제목", value="보험 청구 상담 결과")
+    summary = st.text_area("사건 요약", placeholder="사고/발병 경위, 증상, 치료 정보 등")
+    likelihood = st.text_input("청구 가능성(선택)", value="")
+    meta = st.text_input("메타 정보(선택)", value=f"모델: gpt-4o-mini / Top-K: {ss.top_k}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        required_docs = st.text_area("필요 서류(줄바꿈으로 구분)", value="진단서\n진료비 영수증\n입퇴원확인서")
+    with col2:
+        timeline = st.text_area("타임라인(예: 2025-01-02 최초 내원 / 2025-01-05 입원 등)", value="초진\n입원\n퇴원")
+
+    appendix = st.text_area("부록(선택)", value="")
+    qr_url = st.text_input("QR URL(선택)", value="")
+
+    def _compose_question_from_form():
+        parts = []
+        if title: parts.append(f"[제목] {title}")
+        if summary: parts.append(f"[사건요약] {summary}")
+        if likelihood: parts.append(f"[청구가능성] {likelihood}")
+        if timeline:
+            steps = ", ".join([s.strip() for s in timeline.splitlines() if s.strip()])
+            parts.append(f"[타임라인] {steps}")
+        if required_docs:
+            docs = ", ".join([d.strip() for d in required_docs.splitlines() if d.strip()])
+            parts.append(f"[필요서류] {docs}")
+        if meta: parts.append(f"[메타] {meta}")
+        if appendix: parts.append(f"[부록] {appendix}")
+        if qr_url: parts.append(f"[QR] {qr_url}")
+        return "\n".join(parts)
+
+    if st.button("📄 PDF 생성 및 다운로드"):
+        question_text = _compose_question_from_form()
+        if not question_text.strip():
+            st.error("폼에 최소 한 개 항목 이상 입력하세요.")
+        else:
+            pdf_payload = {
+                "question": question_text,
+                "policy_type": ss.insurer,
+                "top_k": int(ss.top_k),
+                "max_tokens": int(ss.max_tokens),
+                "temperature": float(ss.temperature),
+            }
+            _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="answer.pdf")
