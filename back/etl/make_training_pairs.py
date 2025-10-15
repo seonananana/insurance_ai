@@ -1,136 +1,91 @@
-#!/usr/bin/env python3
-# etl/make_training_pairs.py
-import json, glob, re, random
-from pathlib import Path
-from typing import Dict, Any, Iterable, Tuple, List
+import argparse, json, random, os, re
+try:
+    from rank_bm25 import BM25Okapi
+    HAS_BM25 = True
+except Exception:
+    HAS_BM25 = False
 
-BASE = Path(__file__).resolve().parents[1]   # ~/insurance_ai/back
-CURATED_CHUNKS = BASE / "data/curated/chunks.jsonl"
-OUT_PAIRS = BASE / "data/train/pairs.jsonl"
+def read_jsonl(p):
+    with open(p,"r",encoding="utf-8") as f:
+        for l in f:
+            l=l.strip()
+            if l: yield json.loads(l)
 
-MIN_LEN = 40       # 너무 짧은 문장 제거
-SEED = 42
-
-# 우선순위로 본문 후보 키들
-BODY_KEYS = ["body", "text", "content", "clause", "description", "paragraph"]
-
-def body_clip(s: str, max_chars: int = 1000) -> str:
-    s = (s or "").strip()
-    s = re.sub(r"\s+", " ", s)
-    if len(s) > max_chars:
-        s = s[:max_chars].rstrip() + "…"
+def to_query(s: str) -> str:
+    s = s.strip()
+    if s.endswith(("다.","요.",".")): s = s[:-1]
+    if not s.endswith("?"): s += "?"
     return s
 
-def extract_body(item: Dict[str, Any]) -> Tuple[str, str]:
-    """(title, body) 반환. title은 없으면 빈 문자열."""
-    title = item.get("title") or item.get("heading") or ""
-    for k in BODY_KEYS:
-        if k in item and isinstance(item[k], str) and item[k].strip():
-            return title, item[k]
-    # 혹시 nested 구조 (예: item["data"]["text"])도 대응
-    data = item.get("data")
-    if isinstance(data, dict):
-        for k in BODY_KEYS:
-            v = data.get(k)
-            if isinstance(v, str) and v.strip():
-                return title, v
-    raise KeyError("no_body_like_field")
-
-def load_policy_jsons() -> Iterable[Dict[str, Any]]:
-    # 필요 시 경로 패턴 조정
-    for path in glob.glob(str(BASE / "data" / "policies" / "*.json")):
-        try:
-            obj = json.loads(Path(path).read_text(encoding="utf-8"))
-            if isinstance(obj, dict):
-                yield obj
-            elif isinstance(obj, list):
-                for it in obj:
-                    if isinstance(it, dict):
-                        yield it
-        except Exception:
-            continue
-
-def load_curated_chunks() -> List[str]:
-    texts = []
-    if CURATED_CHUNKS.exists():
-        with CURATED_CHUNKS.open("r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    it = json.loads(line)
-                    t = it.get("text")
-                    if isinstance(t, str) and len(t.strip()) >= MIN_LEN:
-                        texts.append(body_clip(t))
-                except Exception:
-                    pass
-    return texts
-
-def build_pairs_from_chunks(chunks: List[str]) -> List[Tuple[str, str]]:
-    """이웃 청크를 양/양(pair)로 묶어서 query-pos 생성."""
-    pairs = []
-    for i, t in enumerate(chunks):
-        # 좌/우 이웃 중 하나를 positive로
-        neighbors = []
-        if i - 1 >= 0: neighbors.append(chunks[i - 1])
-        if i + 1 < len(chunks): neighbors.append(chunks[i + 1])
-        for pos in neighbors:
-            if len(t) >= MIN_LEN and len(pos) >= MIN_LEN and t != pos:
-                pairs.append((t, pos))
-    return pairs
-
-def build_pairs_from_policies() -> List[Tuple[str, str]]:
-    """정책 JSON에서 (제목↔본문) 또는 (본문↔본문 일부) 페어 생성."""
-    pairs = []
-    for it in load_policy_jsons():
-        try:
-            title, body = extract_body(it)
-        except KeyError:
-            continue
-        body = body_clip(body)
-        if len(body) < MIN_LEN:
-            continue
-        # 제목이 있으면 (제목 → 본문) 페어
-        if title and len(title.strip()) >= 5:
-            pairs.append((title.strip(), body))
-        # 본문 내 문장 스플릿으로 (본문 일부 → 본문) 페어도 생성
-        sents = re.split(r"(?<=[.!?]|[.] [가-힣])\s+", body)
-        sents = [s.strip() for s in sents if len(s.strip()) >= MIN_LEN]
-        for s in sents[:3]:  # 과도 생성 방지
-            pairs.append((s, body))
-    return pairs
-
-def dedup_pairs(pairs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-    seen = set()
-    out = []
-    for q, p in pairs:
-        key = (q, p)
-        if key not in seen:
-            seen.add(key)
-            out.append(key)
-    return out
+def tokenize(s: str):
+    s = s.lower()
+    s = re.sub(r"[^0-9a-z가-힣]+"," ",s)
+    return s.split()
 
 def main():
-    random.seed(SEED)
-    # 1) curated/chunks.jsonl 우선 활용
-    chunks = load_curated_chunks()
-    pairs = build_pairs_from_chunks(chunks)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--src", default="back/data/corpus/corpus_ko_ins.jsonl")
+    ap.add_argument("--out", default="back/data/train/train_retriever.jsonl")
+    ap.add_argument("--valid", default="back/data/train/valid_retriever.jsonl")
+    ap.add_argument("--split", type=float, default=0.8)
+    ap.add_argument("--neg", choices=["random","bm25"], default="bm25")
+    ap.add_argument("--neg-num", type=int, default=20)
+    ap.add_argument("--neg-topk", type=int, default=50)
+    args = ap.parse_args()
 
-    # 2) policies/*.json 등도 있으면 추가
-    pairs += build_pairs_from_policies()
+    src=args.src
+    if not os.path.exists(src):
+        alt="back/data/corpus/corpus_sentences.jsonl"
+        if os.path.exists(alt): src=alt
+        else: raise SystemExit(f"[ERR] corpus not found: {args.src} / {alt}")
 
-    pairs = dedup_pairs(pairs)
-    OUT_PAIRS.parent.mkdir(parents=True, exist_ok=True)
+    docs=[(rec.get("text") or "").strip() for rec in read_jsonl(src)]
+    docs=[t for t in docs if t]
+    if not docs: raise SystemExit("[ERR] empty corpus")
 
-    if not pairs:
-        # 더미 1건이라도 만들어서 학습 파이프라인 안 끊기게
-        dummy_q = "실손의료보험의 보장 범위를 알고 싶습니다."
-        dummy_p = "실손의료보험은 실제 부담한 의료비를 한도로 보상하며 약관의 보장 제외 사항을 확인해야 합니다."
-        pairs = [(dummy_q, dummy_p)]
+    if args.neg=="bm25":
+        if not HAS_BM25:
+            print("[WARN] rank-bm25 미설치 → 랜덤 네거로 대체 (pip install rank-bm25)")
+            args.neg="random"
+        else:
+            bm25 = BM25Okapi([tokenize(x) for x in docs])
 
-    with OUT_PAIRS.open("w", encoding="utf-8") as f:
-        for q, p in pairs:
-            f.write(json.dumps({"query": q, "pos": p}, ensure_ascii=False) + "\n")
+    random.shuffle(docs)
+    cut=max(100,int(len(docs)*args.split))
+    train_docs=docs[:cut]
+    valid_docs=docs[cut:cut+max(500,len(docs)//10)]
 
-    print(f"[ok] wrote {len(pairs)} pairs → {OUT_PAIRS}")
+    def pick_negs(q_text):
+        if args.neg=="random":
+            k=min(args.neg_num,len(docs))
+            return random.sample(docs,k=k)
+        # bm25
+        scores=bm25.get_scores(tokenize(q_text))
+        idx=sorted(range(len(scores)), key=lambda i:-scores[i])[:args.neg_topk]
+        res=[]
+        for i in idx:
+            t=docs[i]
+            if t!=q_text and t not in res:
+                res.append(t)
+            if len(res)>=args.neg_num: break
+        if not res:
+            k=min(args.neg_num,len(docs))
+            res=random.sample(docs,k=k)
+        return res
 
-if __name__ == "__main__":
+    def dump(subset,path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        n=0
+        with open(path,"w",encoding="utf-8") as out:
+            for p in subset:
+                q=to_query(p)
+                negs=pick_negs(q)
+                out.write(json.dumps({"query":q,"pos":[p],"neg":negs},ensure_ascii=False)+"\n")
+                n+=1
+        print(f"[OK] {path} rows={n}")
+
+    dump(train_docs, args.out)
+    dump(valid_docs, args.valid)
+
+if __name__=="__main__":
     main()

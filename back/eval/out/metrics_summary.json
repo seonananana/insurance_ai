@@ -1,0 +1,10 @@
+{
+  "count": 10,
+  "sem_sim_baseline": 0.9041846871376038,
+  "sem_sim_rag": 0.9282589793205261,
+  "evid_rougeL_recall_baseline": 0.0,
+  "evid_rougeL_recall_rag": 0.5,
+  "gt_in_sources_rag": 0.6,
+  "improve_sem_sim": 0.02407429218292234,
+  "improve_evid_rougeL": 0.5
+}

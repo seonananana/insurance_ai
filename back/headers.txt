@@ -1,0 +1,7 @@
+HTTP/1.1 200 OK
+date: Tue, 14 Oct 2025 05:49:51 GMT
+server: uvicorn
+content-disposition: attachment; filename="answer.pdf"
+content-type: application/pdf
+transfer-encoding: chunked
+

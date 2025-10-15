@@ -1,195 +1,150 @@
-# back/train/train_retriever.py
-# Ultra-safe training for low-memory CPU boxes
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Retriever fine-tuning (E5/SBERT) — CPU-safe manual loop.
+Input(train/valid): JSONL lines like {"query":"...", "pos":["..."], "neg":["..."]}
 
-import os
-import json
-import random
-import warnings
-from collections import deque
-from pathlib import Path
-from typing import Optional, Dict, Any, Iterator
+Run:
+  python back/train/train_retriever.py \
+    --train back/data/train/train_retriever.jsonl \
+    --valid back/data/train/valid_retriever.jsonl \
+    --out   back/models/ins-match-embed \
+    --base  intfloat/multilingual-e5-small \
+    --epochs 1 --max-samples 1000 --batch 2 --max-len 64 --device cpu
+"""
 
+import os, json, time, random, argparse
+from typing import List, Dict
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+os.environ.setdefault("ACCELERATE_USE_MPS_DEVICE", "false")
+os.environ.setdefault("ACCELERATE_MIXED_PRECISION", "no")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
-warnings.filterwarnings("ignore", message=".*pin_memory.*")
 
 import torch
-torch.set_num_threads(1)
+from torch.utils.data import DataLoader
+from sentence_transformers import SentenceTransformer, InputExample, losses
 
-from sentence_transformers import SentenceTransformer, InputExample, losses, evaluation
-from torch.utils.data import IterableDataset, DataLoader
+def read_jsonl(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line=line.strip()
+            if line: yield json.loads(line)
 
-# -----------------------
-# 설정 (환경변수로 즉시 튜닝 가능)
-# -----------------------
-BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data" / "train"
-OUT_DIR  = BASE_DIR / "models" / "ins-match-embed"
+def build_train_examples(path: str, max_samples: int) -> List[InputExample]:
+    ex=[]
+    for r in read_jsonl(path):
+        q=(r.get("query") or "").strip()
+        pos=r.get("pos") or []
+        if q and pos:
+            ex.append(InputExample(texts=[f"query: {q}", f"passage: {pos[0]}"]))
+        if len(ex)>=max_samples: break
+    random.shuffle(ex); return ex
 
-# 학습 데이터 후보 파일 (존재하는 순으로 선택)
-CANDIDATES = [
-    DATA_DIR / "pairs.jsonl",
-    DATA_DIR / "pairs_positive.jsonl",
-    DATA_DIR / "triplets.jsonl",
-]
+@torch.no_grad()
+def eval_recall_at_k(valid_path: str, model: SentenceTransformer, k_values=(1,3,5,10)) -> Dict[int,float]:
+    import numpy as np
+    def norm(x): n=np.linalg.norm(x,axis=1,keepdims=True)+1e-12; return x/n
+    hits={k:0 for k in k_values}; total=0
+    for r in read_jsonl(valid_path):
+        q=(r.get("query") or "").strip()
+        pos=r.get("pos") or []
+        neg=r.get("neg") or []
+        if not q or not pos: continue
+        cands=[pos[0]]+list(neg)
+        if not cands: continue
+        texts=[f"query: {q}"]+[f"passage: {t}" for t in cands]
+        embs=model.encode(texts, normalize_embeddings=True).astype("float32")
+        qe, de=embs[0:1], embs[1:]
+        scores=(qe@de.T)[0]
+        order=np.argsort(-scores)
+        pos_rank=int(np.where(order==0)[0][0])+1
+        total+=1
+        for k in k_values:
+            if pos_rank<=k: hits[k]+=1
+    return {k:(hits[k]/total if total else 0.0) for k in k_values}
 
-# 모델/학습 하이퍼파라미터 (env override 가능)
-BASE_MODEL   = os.getenv("E5_BASE", "intfloat/multilingual-e5-small")  # ★ 더 작은 기본값
-BATCH_SIZE   = int(os.getenv("TRAIN_BATCH", "2"))       # ★ 매우 작게 시작
-EPOCHS       = int(os.getenv("EPOCHS", "1"))            # 일단 1 epoch로 검증
-WARMUP_STEPS = int(os.getenv("WARMUP_STEPS", "200"))
-MAX_LEN      = int(os.getenv("MAX_LEN", "128"))         # ★ 96~128 권장
-SEED         = int(os.getenv("SEED", "42"))
+def train(train_path, valid_path, out_dir, base_model="intfloat/multilingual-e5-small",
+          device="cpu", epochs=1, batch_size=2, max_len=64, lr=2e-5,
+          max_samples=1000, early_stop_loss=1e-3, patience=2,
+          steps_per_epoch=0, save_every=500):
+    device=device.lower()
+    if device not in {"cpu","cuda","mps"}: device="cpu"
+    print(f"[INFO] base={base_model} device={device}")
 
-# 평가 토글/크기
-ENABLE_EVAL  = os.getenv("EVAL", "0").lower() not in ("0", "false", "no", "n")  # ★ 기본 끔
-NOISE_MAX    = int(os.getenv("EVAL_NOISE_MAX", "256"))
+    train_ex=build_train_examples(train_path, max_samples=max_samples)
+    if not train_ex: raise SystemExit(f"[ERR] empty/invalid train file: {train_path}")
+    print(f"[INFO] train samples: {len(train_ex)}")
 
-# 한 epoch에 사용할 step 수 (OOM/누수 방지용)
-STEPS_PER_EPOCH = int(os.getenv("STEPS_PER_EPOCH", "800"))  # 필요시 500/300까지 낮추세요
+    model=SentenceTransformer(base_model, device=device)
+    model.max_seq_length=max_len
+    loss_fn=losses.MultipleNegativesRankingLoss(model)
+    loader=DataLoader(train_ex, batch_size=batch_size, shuffle=True, drop_last=True,
+                      collate_fn=model.smart_batching_collate)
 
-# 셔플 버퍼 크기: 메모리와 타협 (너무 크면 OOM 원인)
-SHUFFLE_BUFFER = int(os.getenv("SHUFFLE_BUFFER", "1024"))   # 512~2048 사이 권장
+    opt=torch.optim.AdamW(model.parameters(), lr=lr)
+    steps_ep = len(loader) if steps_per_epoch<=0 else min(steps_per_epoch, len(loader))
+    total_steps = steps_ep * epochs
+    print(f"[INFO] epochs={epochs} batch={batch_size} steps/epoch={steps_ep} total={total_steps}")
 
-# -----------------------
-# E5 전처리
-# -----------------------
-def as_query(x: str) -> str:
-    return f"query: {x}"
+    model.train(); step=0; low_cnt=0; t0=time.time(); running=0.0
+    for ep in range(epochs):
+        step_in_ep=0
+        for features, labels in loader:
+            for feat in features:
+                for k,v in feat.items():
+                    if isinstance(v, torch.Tensor): feat[k]=v.to(device)
+            loss=loss_fn(features, labels)
+            lv=float(loss.detach().cpu().item())
+            running+=lv
+            opt.zero_grad(set_to_none=True); loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
+            step+=1; step_in_ep+=1
 
-def as_passage(x: str) -> str:
-    return f"passage: {x}"
+            if step%100==0:
+                avg=running/100.0; running=0.0
+                print(f"[epoch {ep+1}/{epochs}] step {step}/{total_steps} loss={avg:.4f} elapsed={int(time.time()-t0)}s", flush=True)
+                if avg<early_stop_loss:
+                    low_cnt+=1
+                    if low_cnt>=patience:
+                        print("[INFO] early stop triggered."); ep=epochs; break
+                else:
+                    low_cnt=0
 
-# -----------------------
-# JSONL 파서
-# -----------------------
-def _first_str(d: Dict[str, Any], *keys) -> Optional[str]:
-    for k in keys:
-        v = d.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return None
+            if save_every>0 and step%save_every==0:
+                os.makedirs(out_dir, exist_ok=True); model.save(out_dir)
+                print(f"[CKPT] saved -> {out_dir}")
 
-def parse_pair_line(line: str) -> Optional[InputExample]:
-    try:
-        d = json.loads(line)
-    except Exception:
-        return None
-    q = _first_str(d, "query", "q", "anchor")
-    p = _first_str(d, "positive", "pos", "p", "passage", "text")
-    if not (q and p):
-        return None
-    # CosineSimilarityLoss 사용 → label 필수
-    return InputExample(texts=[as_query(q), as_passage(p)], label=1.0)
+            if steps_per_epoch>0 and step_in_ep>=steps_per_epoch: break
 
-def choose_train_file() -> Path:
-    for p in CANDIDATES:
-        if p.exists():
-            return p
-    raise FileNotFoundError(
-        f"No training file found under {DATA_DIR} "
-        f"(expected one of: {', '.join(x.name for x in CANDIDATES)})"
-    )
+    os.makedirs(out_dir, exist_ok=True); model.save(out_dir)
+    print(f"[OK] saved model -> {out_dir}")
 
-# -----------------------
-# 스트리밍 데이터셋(파일 → 작은 셔플 버퍼 → 배치)
-# -----------------------
-class PairsStream(IterableDataset):
-    def __init__(self, jsonl_path: Path, shuffle_buffer: int, seed: int):
-        self.path = jsonl_path
-        self.bufsz = max(1, shuffle_buffer)
-        self.seed = seed
+    if valid_path and os.path.exists(valid_path):
+        print("[INFO] evaluating valid (Recall@1/3/5/10)...")
+        rk=eval_recall_at_k(valid_path, model, k_values=(1,3,5,10))
+        print(" ".join([f"R@{k}={rk[k]:.3f}" for k in (1,3,5,10)]))
 
-    def __iter__(self) -> Iterator[InputExample]:
-        # 작은 버퍼로 의사 셔플 (in-memory 전체 적재 X)
-        rng = random.Random(self.seed + torch.randint(0, 10_000_000, ()).item())
-        buf: deque[InputExample] = deque(maxlen=self.bufsz)
+def parse_args():
+    p=argparse.ArgumentParser()
+    p.add_argument("--train", required=True)
+    p.add_argument("--valid", default="")
+    p.add_argument("--out",   default="back/models/ins-match-embed")
+    p.add_argument("--base",  default=os.getenv("E5_BASE","intfloat/multilingual-e5-small"))
+    p.add_argument("--device", default="cpu", choices=["cpu","mps","cuda"])
+    p.add_argument("--epochs", type=int, default=int(os.getenv("EPOCHS","1")))
+    p.add_argument("--batch",  type=int, default=int(os.getenv("BATCH","2")))
+    p.add_argument("--max-len",type=int, default=int(os.getenv("MAX_LEN","64")))
+    p.add_argument("--lr",     type=float, default=float(os.getenv("LR","2e-5")))
+    p.add_argument("--max-samples", type=int, default=int(os.getenv("MAX_SAMPLES","1000")))
+    p.add_argument("--early-stop-loss", type=float, default=float(os.getenv("EARLY_STOP_LOSS","1e-3")))
+    p.add_argument("--patience", type=int, default=int(os.getenv("PATIENCE","2")))
+    p.add_argument("--steps-per-epoch", type=int, default=int(os.getenv("STEPS_PER_EPOCH","0")))
+    p.add_argument("--save-every", type=int, default=int(os.getenv("SAVE_EVERY","500")))
+    return p.parse_args()
 
-        def flush_buffer():
-            # 버퍼에 남은 것을 무작위 순서로 방출
-            tmp = list(buf)
-            rng.shuffle(tmp)
-            buf.clear()
-            for it in tmp:
-                yield it
-
-        with self.path.open("r", encoding="utf-8") as f:
-            for line in f:
-                ex = parse_pair_line(line.strip())
-                if ex is None:
-                    continue
-                buf.append(ex)
-                # 버퍼가 꽉 차면 일부를 랜덤 방출
-                if len(buf) == self.bufsz:
-                    k = max(1, self.bufsz // 4)  # 일부만 내보내고 잔류시켜 다양성 유지
-                    tmp = list(buf)
-                    rng.shuffle(tmp)
-                    emit, keep = tmp[:k], tmp[k:]
-                    buf.clear()
-                    for it in keep:
-                        buf.append(it)
-                    for it in emit:
-                        yield it
-
-        # 잔여 방출
-        yield from flush_buffer()
-
-# -----------------------
-# 메인
-# -----------------------
-def main():
-    random.seed(SEED)
-
-    train_path = choose_train_file()
-    print(f"[ok] training source: {train_path}")
-
-    # 모델/손실 (먼저 생성해야 collate_fn 사용 가능)
-    model = SentenceTransformer(BASE_MODEL)
-    model.max_seq_length = MAX_LEN
-
-    # 가능한 경우 gradient checkpointing 활성화 (메모리 절감)
-    try:
-        first = model._first_module()
-        if hasattr(first, "auto_model") and hasattr(first.auto_model, "gradient_checkpointing_enable"):
-            first.auto_model.gradient_checkpointing_enable()
-            print("[info] gradient checkpointing enabled")
-    except Exception:
-        pass
-
-    # 메모리 친화 손실
-    loss = losses.CosineSimilarityLoss(model)
-
-    # 스트리밍 데이터셋 & 로더
-    train_ds = PairsStream(train_path, shuffle_buffer=SHUFFLE_BUFFER, seed=SEED)
-    train_dl = DataLoader(
-        train_ds,
-        batch_size=BATCH_SIZE,
-        shuffle=False,               # IterableDataset는 shuffle 불가
-        drop_last=False,
-        num_workers=0,
-        pin_memory=False,
-        collate_fn=model.smart_batching_collate
-    )
-
-    evaluator = None  # 안전 모드: 평가 기본 끔
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 짧게 끊어서 학습 (메모리 피크/누수 회피)
-    model.fit(
-        train_objectives=[(train_dl, loss)],
-        evaluator=evaluator,
-        epochs=EPOCHS,
-        steps_per_epoch=STEPS_PER_EPOCH,
-        warmup_steps=WARMUP_STEPS,
-        output_path=str(OUT_DIR),
-        use_amp=False,
-        show_progress_bar=True,
-        save_best_model=True
-    )
-
-    print("Saved to", OUT_DIR)
-
-if __name__ == "__main__":
-    main()
+if __name__=="__main__":
+    args=parse_args()
+    train(train_path=args.train, valid_path=args.valid, out_dir=args.out, base_model=args.base,
+          device=args.device, epochs=args.epochs, batch_size=args.batch, max_len=args.max_len,
+          lr=args.lr, max_samples=args.max_samples, early_stop_loss=args.early_stop_loss,
+          patience=args.patience, steps_per_epoch=args.steps_per_epoch, save_every=args.save_every)

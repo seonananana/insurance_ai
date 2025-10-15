@@ -1,0 +1,20 @@
+INFO:     Started server process [40384]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8010 (Press CTRL+C to quit)
+[RAG] Found 3 PDFs in /Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해
+[RAG] Found 1 PDFs in /Users/gksmfly/Documents/GitHub/insurance_ai/back/data
+[RAG] Loading SBERT model: jhgan/ko-sbert-sts
+[RAG] Built index for DB손해: 1786 chunks, dim=768 (cache=off)
+[RAG] No PDFs for insurer=현대해상 (checked [PosixPath('/Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해/DB실손보험2507.pdf'), PosixPath('/Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해/DB암보험2504.pdf'), PosixPath('/Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해/DB입원비보험2504.pdf')] ...)
+[RAG] No PDFs for insurer=삼성화재 (checked [PosixPath('/Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해/DB실손보험2507.pdf'), PosixPath('/Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해/DB암보험2504.pdf'), PosixPath('/Users/gksmfly/Documents/GitHub/insurance_ai/back/data/DB손해/DB입원비보험2504.pdf')] ...)
+[RAG] indices ready (cache=off)
+INFO:     127.0.0.1:58136 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58137 - "GET /health/ping HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58149 - "GET /health/ HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40384]
+/opt/anaconda3/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
