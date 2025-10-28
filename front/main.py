@@ -9,10 +9,10 @@ from datetime import datetime
 # 기본 설정
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="보험 RAG 플랫폼", 
-    layout="wide", 
-    initial_sidebar_state="expanded",
-    page_icon="🏥"
+    page_title="Insurance AI",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    page_icon="🛡️"
 )
 
 API_BASE = st.secrets.get("API_BASE") or os.getenv("API_BASE") or "http://localhost:8000"
@@ -43,6 +43,8 @@ if "auto_pdf" not in ss:
     ss["auto_pdf"] = True
 if "show_settings" not in ss:
     ss["show_settings"] = False
+if "current_page" not in ss:
+    ss["current_page"] = "Home"
 
 def _msgs():
     return ss["messages_by_insurer"][ss["insurer"]]
@@ -57,40 +59,64 @@ inject_css("""
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
 
 :root {
-    --primary-blue: #2563EB;
-    --primary-dark: #1e40af;
-    --bg-light: #F8FAFC;
+    --primary-blue: #1E88E5;
+    --primary-dark: #1565C0;
+    --primary-light: #42A5F5;
+    --secondary-blue: #0D47A1;
+    --accent-blue: #03A9F4;
+    --bg-light: #E3F2FD;
     --bg-card: #FFFFFF;
-    --text-primary: #0F172A;
-    --text-secondary: #475569;
-    --border-light: #E2E8F0;
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --text-primary: #0D47A1;
+    --text-secondary: #1976D2;
+    --border-light: #90CAF9;
+    --shadow-sm: 0 2px 4px rgba(30, 136, 229, 0.1);
+    --shadow-md: 0 4px 8px rgba(30, 136, 229, 0.15);
+    --shadow-lg: 0 8px 16px rgba(30, 136, 229, 0.2);
+}
+
+/* Streamlit Deploy 버튼 숨기기 */
+[data-testid="stToolbar"] {
+    display: none !important;
+}
+
+/* 전체 배경 */
+.stApp {
+    background: linear-gradient(180deg, #E3F2FD 0%, #FFFFFF 100%);
 }
 
 /* 전체 레이아웃 */
 .block-container {
     max-width: 1400px;
-    padding: 2rem 2rem 3rem 2rem;
+    padding: 0rem 2rem 3rem 2rem;
     font-family: 'Noto Sans KR', sans-serif;
 }
 
-/* 사이드바 스타일링 */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%);
-    border-right: 1px solid var(--border-light);
+/* 상단 네비게이션 바 스타일 */
+.nav-title-button button {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: white !important;
+    font-size: 1.5rem !important;
+    font-weight: 900 !important;
+    padding: 0.5rem 1rem !important;
 }
 
-section[data-testid="stSidebar"] > div {
-    padding: 2rem 1.5rem;
+.nav-title-button button:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    transform: none !important;
+}
+
+/* 사이드바 제거 */
+section[data-testid="stSidebar"] {
+    display: none;
 }
 
 /* 히어로 헤더 개선 */
 .hero-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    padding: 2.5rem 2rem;
-    border-radius: 20px;
+    background: linear-gradient(135deg, #1E88E5 0%, #1565C0 100%);
+    padding: 3rem 2rem;
+    border-radius: 16px;
     margin-bottom: 2rem;
     box-shadow: var(--shadow-lg);
     position: relative;
@@ -102,27 +128,28 @@ section[data-testid="stSidebar"] > div {
     position: absolute;
     top: -50%;
     right: -20%;
-    width: 300px;
-    height: 300px;
+    width: 400px;
+    height: 400px;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 50%;
 }
 
 .hero-title {
     color: white;
-    font-size: 2rem;
+    font-size: 2.5rem;
     font-weight: 900;
     margin: 0;
     letter-spacing: -0.5px;
     position: relative;
     z-index: 1;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .hero-subtitle {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 1.1rem;
     font-weight: 400;
-    margin-top: 0.5rem;
+    margin-top: 0.75rem;
     position: relative;
     z-index: 1;
 }
@@ -144,8 +171,8 @@ div[data-testid="stChatMessage"]:hover {
 
 /* 참조 문서 카드 */
 .reference-card {
-    background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-    border-left: 4px solid #F59E0B;
+    background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+    border-left: 4px solid #1E88E5;
     border-radius: 12px;
     padding: 1rem 1.25rem;
     margin: 0.75rem 0;
@@ -154,14 +181,14 @@ div[data-testid="stChatMessage"]:hover {
 
 .reference-title {
     font-weight: 700;
-    color: #92400E;
+    color: #0D47A1;
     margin-bottom: 0.5rem;
 }
 
 .reference-score {
     display: inline-block;
-    background: #FBBF24;
-    color: #78350F;
+    background: #42A5F5;
+    color: #FFFFFF;
     padding: 0.2rem 0.6rem;
     border-radius: 20px;
     font-size: 0.75rem;
@@ -170,7 +197,7 @@ div[data-testid="stChatMessage"]:hover {
 }
 
 .reference-snippet {
-    color: #451A03;
+    color: #1565C0;
     font-size: 0.9rem;
     line-height: 1.6;
     margin-top: 0.5rem;
@@ -178,16 +205,16 @@ div[data-testid="stChatMessage"]:hover {
 
 /* Expander 스타일링 */
 .streamlit-expanderHeader {
-    background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
+    background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
     border-radius: 12px;
     padding: 1rem 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
-    border: 1px solid #BAE6FD;
+    border: 1px solid #90CAF9;
 }
 
 .streamlit-expanderHeader:hover {
-    background: linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%);
+    background: linear-gradient(135deg, #BBDEFB 0%, #90CAF9 100%);
 }
 
 /* 버튼 스타일링 */
@@ -206,6 +233,21 @@ div[data-testid="stChatMessage"]:hover {
 .stButton > button:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+    background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary-blue) 100%);
+}
+
+.stButton > button:active {
+    transform: translateY(0px);
+}
+
+.stButton > button[kind="secondary"] {
+    background: white;
+    color: var(--primary-blue);
+    border: 2px solid var(--primary-blue);
+}
+
+.stButton > button[kind="secondary"]:hover {
+    background: var(--bg-light);
 }
 
 /* 입력 필드 개선 */
@@ -275,6 +317,16 @@ div[data-testid="stChatMessage"]:hover {
     box-shadow: var(--shadow-sm);
 }
 
+div[data-testid="stNotificationContentInfo"] {
+    background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+    border-left: 4px solid var(--primary-blue);
+}
+
+div[data-testid="stNotificationContentSuccess"] {
+    background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+    border-left: 4px solid #4CAF50;
+}
+
 /* 뱃지 스타일 */
 .badge {
     display: inline-block;
@@ -282,23 +334,82 @@ div[data-testid="stChatMessage"]:hover {
     border-radius: 20px;
     font-size: 0.75rem;
     font-weight: 600;
-    background: #EEF2FF;
+    background: #E3F2FD;
     color: var(--primary-blue);
 }
 
 .badge.success {
-    background: #D1FAE5;
-    color: #065F46;
+    background: #81C784;
+    color: #FFFFFF;
 }
 
 .badge.warning {
-    background: #FEF3C7;
-    color: #92400E;
+    background: #FFB74D;
+    color: #FFFFFF;
 }
 
 .badge.error {
-    background: #FEE2E2;
-    color: #991B1B;
+    background: #E57373;
+    color: #FFFFFF;
+}
+
+/* 보험사 선택 카드 */
+.insurer-card {
+    background: white;
+    border: 2px solid var(--border-light);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-sm);
+}
+
+.insurer-card:hover {
+    border-color: var(--primary-blue);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.insurer-card.selected {
+    background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+    border-color: var(--primary-blue);
+    box-shadow: var(--shadow-md);
+}
+
+/* 홈 화면 카드 */
+.home-feature-card {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: var(--shadow-md);
+    border: 2px solid var(--border-light);
+    transition: all 0.3s ease;
+    height: 100%;
+}
+
+.home-feature-card:hover {
+    border-color: var(--primary-blue);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.home-feature-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.home-feature-title {
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+}
+
+.home-feature-desc {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    line-height: 1.6;
 }
 """)
 
@@ -427,88 +538,181 @@ def _download_pdf_via_browser(endpoint: str, payload: dict, filename: str = "rep
     )
 
 # ─────────────────────────────────────────────────────────────
-# 사이드바
+# 상단 네비게이션 바
 # ─────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### 🏥 보험사 선택")
-    
-    for name, info in INSURERS.items():
-        is_selected = (ss.insurer == name)
-        if st.button(
-            f"{info['icon']} {name}",
-            key=f"btn_{name}",
-            type="primary" if is_selected else "secondary",
-            use_container_width=True
-        ):
-            ss.insurer = name
-            if name not in ss["messages_by_insurer"]:
-                ss["messages_by_insurer"][name] = []
-            st.rerun()
-    
-    st.divider()
-    
-    with st.expander("⚙️ 고급 설정", expanded=ss.show_settings):
-        st.markdown("**검색 설정**")
-        st.slider("📊 Top-K (근거 개수)", 1, 10, key="top_k")
-        st.slider("🌡️ Temperature", 0.0, 1.0, key="temperature", step=0.1)
-        st.slider("📝 Max Tokens", 128, 2048, key="max_tokens", step=128)
-        
-        st.divider()
-        st.markdown("**문서 설정**")
-        st.toggle("📄 답변 후 자동 PDF 저장", key="auto_pdf")
-    
-    st.divider()
-    
-    st.markdown("### 💬 대화 관리")
-    msg_count = len(_msgs())
-    stat_html = f'<div class="stat-card"><div class="stat-value">{msg_count}</div><div class="stat-label">메시지 수</div></div>'
-    st.markdown(stat_html, unsafe_allow_html=True)
-    
-    if st.button("🗑️ 대화 기록 삭제", use_container_width=True):
-        ss["messages_by_insurer"][ss["insurer"]] = []
+nav_col1, nav_col2 = st.columns([2, 3])
+
+with nav_col1:
+    st.markdown('<div class="nav-title-button">', unsafe_allow_html=True)
+    if st.button("🛡️ Insurance AI", key="nav_home", use_container_width=True):
+        ss["current_page"] = "Home"
         st.rerun()
-    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with nav_col2:
+    menu_cols = st.columns(4)
+
+    with menu_cols[0]:
+        if st.button("🏠 Home", key="menu_home", type="primary" if ss.current_page == "Home" else "secondary", use_container_width=True):
+            ss["current_page"] = "Home"
+            st.rerun()
+
+    with menu_cols[1]:
+        if st.button("💬 Q&A 상담", key="menu_qa", type="primary" if ss.current_page == "Q&A" else "secondary", use_container_width=True):
+            ss["current_page"] = "Q&A"
+            st.rerun()
+
+    with menu_cols[2]:
+        if st.button("📄 PDF 리포트", key="menu_pdf", type="primary" if ss.current_page == "PDF" else "secondary", use_container_width=True):
+            ss["current_page"] = "PDF"
+            st.rerun()
+
+    with menu_cols[3]:
+        if st.button("⚙️ 설정", key="menu_settings", type="primary" if ss.current_page == "Settings" else "secondary", use_container_width=True):
+            ss["current_page"] = "Settings"
+            st.rerun()
+
+st.divider()
+
+# ─────────────────────────────────────────────────────────────
+# 페이지 렌더링
+# ─────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# Home 페이지
+# ─────────────────────────────────────────────────────────────
+if ss.current_page == "Home":
+    hero_html = f"""
+    <div class="hero-header">
+        <h1 class="hero-title">🛡️ Insurance AI</h1>
+        <p class="hero-subtitle">AI 기반 보험 문서 검색 및 상담 시스템</p>
+    </div>
+    """
+    st.markdown(hero_html, unsafe_allow_html=True)
+
+    st.markdown("### 💼 보험사 선택")
+    st.info("💡 보험사를 선택하면 바로 Q&A 상담을 시작할 수 있습니다.")
+    ins_cols = st.columns(3)
+
+    for idx, (name, info) in enumerate(INSURERS.items()):
+        with ins_cols[idx]:
+            is_selected = (ss.insurer == name)
+            card_class = "insurer-card selected" if is_selected else "insurer-card"
+
+            if st.button(
+                f"{info['icon']} {name}",
+                key=f"home_btn_{name}",
+                use_container_width=True,
+                type="primary" if is_selected else "secondary"
+            ):
+                ss.insurer = name
+                if name not in ss["messages_by_insurer"]:
+                    ss["messages_by_insurer"][name] = []
+                # 보험사 선택 후 바로 Q&A 페이지로 이동
+                ss["current_page"] = "Q&A"
+                st.rerun()
+
     st.divider()
-    
-    st.markdown("### 🔌 시스템 상태")
+
+    st.markdown("### ✨ 주요 기능")
+
+    feature_cols = st.columns(3)
+
+    with feature_cols[0]:
+        st.markdown("""
+        <div class="home-feature-card">
+            <div class="home-feature-icon">💬</div>
+            <div class="home-feature-title">Q&A 상담</div>
+            <div class="home-feature-desc">보험 관련 질문에 대해 AI가 관련 문서를 검색하여 정확한 답변을 제공합니다.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with feature_cols[1]:
+        st.markdown("""
+        <div class="home-feature-card">
+            <div class="home-feature-icon">📄</div>
+            <div class="home-feature-title">PDF 리포트</div>
+            <div class="home-feature-desc">상세한 보험 청구 리포트를 PDF 형식으로 생성하고 다운로드할 수 있습니다.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with feature_cols[2]:
+        st.markdown("""
+        <div class="home-feature-card">
+            <div class="home-feature-icon">🔍</div>
+            <div class="home-feature-title">문서 검색</div>
+            <div class="home-feature-desc">보험사별 문서를 신속하게 검색하고 필요한 정보를 찾을 수 있습니다.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown("### 📊 시스템 상태")
+
+    status_cols = st.columns(4)
+
     hc = _get(f"{API_BASE.rstrip('/')}/health/")
     if isinstance(hc, dict):
         llm_ok = hc.get("llm_ok", True)
         db_ok = hc.get("db_ok", True)
-        
-        llm_badge = "success" if llm_ok else "error"
-        db_badge = "success" if db_ok else "error"
-        llm_text = "정상" if llm_ok else "오류"
-        db_text = "정상" if db_ok else "오류"
-        
-        status_html = f"""
-        <div style="display: flex; gap: 0.5rem; flex-direction: column;">
-            <div><span class="badge {llm_badge}">🤖 LLM: {llm_text}</span></div>
-            <div><span class="badge {db_badge}">💾 DB: {db_text}</span></div>
-        </div>
-        """
-        st.markdown(status_html, unsafe_allow_html=True)
+
+        with status_cols[0]:
+            llm_badge = "success" if llm_ok else "error"
+            llm_text = "정상" if llm_ok else "오류"
+            st.markdown(f'<div class="stat-card"><div class="stat-value"><span class="badge {llm_badge}">{"✓" if llm_ok else "✗"}</span></div><div class="stat-label">🤖 LLM: {llm_text}</div></div>', unsafe_allow_html=True)
+
+        with status_cols[1]:
+            db_badge = "success" if db_ok else "error"
+            db_text = "정상" if db_ok else "오류"
+            st.markdown(f'<div class="stat-card"><div class="stat-value"><span class="badge {db_badge}">{"✓" if db_ok else "✗"}</span></div><div class="stat-label">💾 DB: {db_text}</div></div>', unsafe_allow_html=True)
+
+        with status_cols[2]:
+            msg_count = len(_msgs())
+            st.markdown(f'<div class="stat-card"><div class="stat-value">{msg_count}</div><div class="stat-label">💬 메시지 수</div></div>', unsafe_allow_html=True)
+
+        with status_cols[3]:
+            st.markdown(f'<div class="stat-card"><div class="stat-value">{ss.insurer[:2]}</div><div class="stat-label">🏢 선택 보험사</div></div>', unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# Settings 페이지
+# ─────────────────────────────────────────────────────────────
+elif ss.current_page == "Settings":
+    st.markdown("## ⚙️ 설정")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 🔍 검색 설정")
+        st.slider("📊 Top-K (근거 개수)", 1, 10, key="top_k")
+        st.slider("🌡️ Temperature", 0.0, 1.0, key="temperature", step=0.1)
+        st.slider("📝 Max Tokens", 128, 2048, key="max_tokens", step=128)
+
+    with col2:
+        st.markdown("### 📄 문서 설정")
+        st.toggle("📄 답변 후 자동 PDF 저장", key="auto_pdf")
+
+        st.markdown("### 💬 대화 관리")
+        msg_count = len(_msgs())
+        st.info(f"현재 대화 메시지 수: {msg_count}개")
+
+        if st.button("🗑️ 대화 기록 삭제", use_container_width=True):
+            ss["messages_by_insurer"][ss["insurer"]] = []
+            st.success("대화 기록이 삭제되었습니다.")
+            st.rerun()
+
+# ─────────────────────────────────────────────────────────────
+# Q&A 상담 페이지
+# ─────────────────────────────────────────────────────────────
+elif ss.current_page == "Q&A":
+    insurer_info = INSURERS[ss.insurer]
+    hero_html = f"""
+    <div class="hero-header">
+        <h1 class="hero-title">{insurer_info['icon']} {ss.insurer} 보험 상담</h1>
+        <p class="hero-subtitle">AI 기반 보험 문서 검색 및 상담 시스템</p>
+    </div>
+    """
+    st.markdown(hero_html, unsafe_allow_html=True)
     
-    st.caption(f"🔗 API: {API_BASE}")
-
-# ─────────────────────────────────────────────────────────────
-# 메인 헤더
-# ─────────────────────────────────────────────────────────────
-insurer_info = INSURERS[ss.insurer]
-hero_html = f"""
-<div class="hero-header">
-    <h1 class="hero-title">{insurer_info['icon']} {ss.insurer} 보험 상담</h1>
-    <p class="hero-subtitle">AI 기반 보험 문서 검색 및 상담 시스템</p>
-</div>
-"""
-st.markdown(hero_html, unsafe_allow_html=True)
-
-tab_qna, tab_pdf = st.tabs(["💬 Q&A 상담", "📄 PDF 리포트"])
-
-# ─────────────────────────────────────────────────────────────
-# 💬 Q&A 탭
-# ─────────────────────────────────────────────────────────────
-with tab_qna:
     if len(_msgs()) == 0:
         st.info("💡 질문을 입력하여 보험 상담을 시작하세요. AI가 관련 문서를 검색하여 답변해드립니다.")
         
@@ -517,139 +721,4 @@ with tab_qna:
         examples = [
             "골절 치료비는 보험 청구가 가능한가요?",
             "입원 시 필요한 서류는 무엇인가요?",
-            "교통사고 보험 처리 절차를 알려주세요",
-            "암 진단 시 보장 범위는 어떻게 되나요?"
-        ]
-        for idx, example in enumerate(examples):
-            with example_cols[idx % 2]:
-                if st.button(f"📌 {example}", key=f"ex_{idx}", use_container_width=True):
-                    ss["example_query"] = example
-    
-    for m in _msgs():
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-
-    insurer_selected = bool(ss.insurer)
-    default_query = ss.pop("example_query", "")
-    user_text = st.chat_input(
-        f"💬 {ss.insurer}에 대해 질문하세요...",
-        disabled=not insurer_selected,
-    ) or default_query
-
-    if user_text:
-        log = _msgs()
-        log.append({"role": "user", "content": user_text})
-        
-        with st.chat_message("user"):
-            st.markdown(user_text)
-
-        with st.spinner("🔍 관련 문서를 검색하고 답변을 생성하고 있습니다..."):
-            payload_ask = {
-                "query": user_text,
-                "policy_type": ss.insurer,
-                "top_k": int(ss.top_k),
-                "max_tokens": int(ss.max_tokens),
-                "temperature": float(ss.temperature),
-            }
-
-            r, err = _post(f"{API_BASE.rstrip('/')}/qa/ask", payload_ask, timeout=(20, 180))
-            if err or r is None:
-                error_msg = f"❌ 요청 실패: {err or 'no response'}"
-                log.append({"role": "assistant", "content": error_msg})
-                st.error(error_msg)
-                st.rerun()
-
-            data = r.json()
-            answer = data.get("answer") or "⚠️ 빈 응답입니다."
-            refs = _normalize_references(data)
-
-            render_answer_card(answer, refs)
-            log.append({"role": "assistant", "content": answer})
-
-            if ss.auto_pdf:
-                detect_metas = [s["title"] for s in refs][: ss.top_k] if refs else []
-                pdf_payload = {
-                    "question": user_text,
-                    "policy_type": ss.insurer,
-                    "top_k": int(ss.top_k),
-                    "max_tokens": int(ss.max_tokens),
-                    "temperature": float(ss.temperature),
-                    "detect_metas": detect_metas,
-                }
-                _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="insurance_report.pdf")
-                st.success("✅ PDF 리포트가 자동으로 다운로드되었습니다.")
-
-# ─────────────────────────────────────────────────────────────
-# 📄 PDF 생성(폼)
-# ─────────────────────────────────────────────────────────────
-with tab_pdf:
-    st.markdown("### 📋 상세 리포트 생성")
-    st.info("💡 아래 폼을 작성하여 상세한 보험 청구 리포트 PDF를 생성할 수 있습니다.")
-
-    with st.form("pdf_form"):
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            title = st.text_input("📌 제목", value="보험 청구 상담 결과", placeholder="리포트 제목을 입력하세요")
-            summary = st.text_area("📝 사건 요약", placeholder="사고/발병 경위, 증상, 치료 정보 등을 입력하세요", height=150)
-        
-        with col2:
-            likelihood = st.text_input("📊 청구 가능성", placeholder="예: 높음, 중간, 낮음")
-            qr_url = st.text_input("🔗 QR 코드 URL (선택)", placeholder="https://example.com")
-
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            required_docs = st.text_area(
-                "📋 필요 서류", 
-                value="진단서\n진료비 영수증\n입퇴원확인서",
-                height=120
-            )
-        
-        with col4:
-            timeline = st.text_area(
-                "📅 타임라인",
-                placeholder="2025-01-02 최초 내원\n2025-01-05 입원\n2025-01-10 퇴원",
-                height=120
-            )
-
-        meta = st.text_input("ℹ️ 메타 정보 (선택)", value=f"모델: gpt-4o-mini / Top-K: {ss.top_k}")
-        appendix = st.text_area("📎 부록 (선택)", placeholder="추가 정보를 입력하세요", height=100)
-
-        submitted = st.form_submit_button("📄 PDF 생성 및 다운로드", use_container_width=True)
-        
-        if submitted:
-            parts = []
-            if title:
-                parts.append(f"[제목] {title}")
-            if summary:
-                parts.append(f"[사건요약] {summary}")
-            if likelihood:
-                parts.append(f"[청구가능성] {likelihood}")
-            if timeline:
-                steps = ", ".join([s.strip() for s in timeline.splitlines() if s.strip()])
-                parts.append(f"[타임라인] {steps}")
-            if required_docs:
-                docs = ", ".join([d.strip() for d in required_docs.splitlines() if d.strip()])
-                parts.append(f"[필요서류] {docs}")
-            if meta:
-                parts.append(f"[메타] {meta}")
-            if appendix:
-                parts.append(f"[부록] {appendix}")
-            if qr_url:
-                parts.append(f"[QR] {qr_url}")
-            
-            question_text = "\n".join(parts)
-            
-            if not question_text.strip():
-                st.error("폼에 최소 한 개 항목 이상 입력하세요.")
-            else:
-                pdf_payload = {
-                    "question": question_text,
-                    "policy_type": ss.insurer,
-                    "top_k": int(ss.top_k),
-                    "max_tokens": int(ss.max_tokens),
-                    "temperature": float(ss.temperature),
-                }
-                _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="answer.pdf")
-                st.success("✅ PDF 생성 요청이 완료되었습니다. 잠시 후 다운로드가 시작됩니다.")
+            "교통사고 보험 처리 절차를 알
