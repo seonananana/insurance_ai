@@ -74,9 +74,21 @@ inject_css("""
     --shadow-lg: 0 8px 16px rgba(30, 136, 229, 0.2);
 }
 
-/* Streamlit Deploy 버튼 숨기기 */
+/* Streamlit 상단 헤더 전체 숨기기 */
+header[data-testid="stHeader"] {
+    display: none !important;
+}
 [data-testid="stToolbar"] {
     display: none !important;
+}
+
+/* 상단 여백 완전히 제거 */
+.main > div:first-child {
+    padding-top: 0 !important;
+}
+
+div[data-testid="stAppViewContainer"] > section:first-child {
+    padding-top: 0 !important;
 }
 
 /* 전체 배경 */
@@ -87,7 +99,9 @@ inject_css("""
 /* 전체 레이아웃 */
 .block-container {
     max-width: 1400px;
-    padding: 0rem 2rem 3rem 2rem;
+    padding: 1rem 2rem 3rem 2rem !important;
+    padding-top: 1rem !important;
+    margin-top: 0 !important;
     font-family: 'Noto Sans KR', sans-serif;
 }
 
@@ -865,3 +879,4 @@ elif ss.current_page == "PDF":
                 }
                 _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="answer.pdf")
                 st.success("✅ PDF 생성 요청이 완료되었습니다. 잠시 후 다운로드가 시작됩니다.")
+                
