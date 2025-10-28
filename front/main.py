@@ -48,19 +48,16 @@ if "current_page" not in ss:
 if "pdf_guard" not in ss:
     ss["pdf_guard"] = set()
 
-
 def _msgs():
     return ss["messages_by_insurer"][ss["insurer"]]
 
 # ─────────────────────────────────────────────────────────────
 # 개선된 CSS 스타일 (상단바 수평 정렬/서브픽셀 보정 포함)
 # ─────────────────────────────────────────────────────────────
-
 def inject_css(css: str):
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-inject_css(
-    """
+inject_css("""
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
 
 :root {
@@ -79,7 +76,7 @@ inject_css(
     --shadow-lg: 0 8px 16px rgba(30, 136, 229, 0.2);
 }
 
-/* Streamlit 기본 헤더/툴바 숨김 (요청 반영) */
+/* Streamlit 기본 헤더/툴바 숨김 */
 header[data-testid="stHeader"], [data-testid="stToolbar"] { display: none !important; }
 
 /* 상단 여백 제거 */
@@ -98,25 +95,20 @@ div[data-testid="stAppViewContainer"] > section:first-child { padding-top: 0 !im
 }
 
 /* ── 상단 네비 수평 라인 고정 ── */
-/* 모든 네비 버튼 동일 높이/라인높이/보더 두께 유지 */
 .stButton > button {
     height: 44px; line-height: 44px; padding: 0 18px;
     border-radius: 12px; box-shadow: var(--shadow-sm);
     border-width: 1.5px !important; box-sizing: border-box;
     transition: transform .12s ease, box-shadow .12s ease;
 }
-/* primary / secondary 모두 같은 보더 두께로 시프트 방지 */
 .stButton > button[kind="secondary"] { border: 1.5px solid var(--primary-blue); background: #fff; color: var(--primary-blue); }
 .stButton > button[kind="secondary"]:hover { background: var(--bg-light); }
 
-/* 상단 타이틀 버튼은 시각만 변화(높이 동일) */
 .nav-title-button button {
     background: transparent !important; border: none !important; box-shadow: none !important;
     color: #0D47A1 !important; font-size: 1.5rem !important; font-weight: 900 !important;
     padding: 0 8px !important; height: 44px; line-height: 44px;
 }
-
-/* Safari 서브픽셀 흔들림 보정 */
 .nav-row { transform: translateZ(0); -webkit-transform: translateZ(0); }
 
 /* 히어로 헤더 */
@@ -125,26 +117,21 @@ div[data-testid="stAppViewContainer"] > section:first-child { padding-top: 0 !im
 .hero-title { color: #fff; font-size: 2.5rem; font-weight: 900; margin: 0; letter-spacing: -0.5px; position: relative; z-index: 1; text-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 .hero-subtitle { color: rgba(255,255,255,0.95); font-size: 1.1rem; font-weight: 400; margin-top: .75rem; position: relative; z-index: 1; }
 
-/* 채팅 메시지 카드 */
+/* 채팅/참조/탭 등 */
 div[data-testid="stChatMessage"] { border: none; border-radius: 16px; padding: 1.25rem 1.5rem; margin: 1rem 0; box-shadow: var(--shadow-sm); background: var(--bg-card); }
-
-/* 참조 문서 카드 */
 .reference-card { background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); border-left: 4px solid #1E88E5; border-radius: 12px; padding: 1rem 1.25rem; margin: .75rem 0; box-shadow: var(--shadow-sm); }
 .reference-title { font-weight: 700; color: #0D47A1; margin-bottom: .5rem; }
 .reference-score { display: inline-block; background: #42A5F5; color: #fff; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; margin-left: .5rem; }
 .reference-snippet { color: #1565C0; font-size: .9rem; line-height: 1.6; margin-top: .5rem; }
 
-/* Expander */
 .streamlit-expanderHeader { background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); border-radius: 12px; padding: 1rem 1.25rem; font-weight: 600; color: var(--text-primary); border: 1px solid #90CAF9; }
 .streamlit-expanderHeader:hover { background: linear-gradient(135deg, #BBDEFB 0%, #90CAF9 100%); }
 
-/* 입력 필드 */
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea { border-radius: 12px; border: 2px solid var(--border-light); padding: .75rem 1rem; transition: all .3s ease; }
 .stTextInput > div > div > input:focus,
 .stTextArea > div > div > textarea:focus { border-color: var(--primary-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
 
-/* 탭 */
 .stTabs [data-baseweb="tab-list"] { gap: 1rem; background: transparent; border-bottom: 2px solid var(--border-light); }
 .stTabs [data-baseweb="tab"] { height: 3.5rem; padding: 0 2rem; background: transparent; border-radius: 12px 12px 0 0; font-weight: 600; font-size: 1rem; }
 .stTabs [aria-selected="true"] { background: #fff; border-bottom: 3px solid var(--primary-blue); }
@@ -166,13 +153,11 @@ div[data-testid="stChatMessage"] { border: none; border-radius: 16px; padding: 1
 .home-feature-icon { font-size: 3rem; margin-bottom: 1rem; }
 .home-feature-title { color: var(--text-primary); font-size: 1.5rem; font-weight: 700; margin-bottom: .75rem; }
 .home-feature-desc { color: var(--text-secondary); font-size: 1rem; line-height: 1.6; }
-    """
-)
+""")
 
 # ─────────────────────────────────────────────────────────────
 # HTTP helpers
 # ─────────────────────────────────────────────────────────────
-
 def _post(url, payload, timeout=(20, 180)):
     try:
         r = requests.post(url, json=payload, timeout=timeout)
@@ -181,7 +166,6 @@ def _post(url, payload, timeout=(20, 180)):
     except requests.RequestException as e:
         return None, str(e)
 
-
 def _get(url, timeout=(10, 30)):
     try:
         r = requests.get(url, timeout=timeout)
@@ -189,7 +173,6 @@ def _get(url, timeout=(10, 30)):
         return r.json()
     except Exception:
         return None
-
 
 def _normalize_references(resp_json: dict):
     refs = []
@@ -213,7 +196,6 @@ def _normalize_references(resp_json: dict):
         snippet = b
         refs.append({"title": title, "snippet": snippet, "score": None})
     return refs
-
 
 def render_answer_card(answer: str, sources: list[dict] | None = None):
     with st.chat_message("assistant"):
@@ -240,7 +222,6 @@ def render_answer_card(answer: str, sources: list[dict] | None = None):
                     </div>
                     """
                     st.markdown(ref_html, unsafe_allow_html=True)
-
 
 def _download_pdf_via_browser(endpoint: str, payload: dict, filename: str = "report.pdf"):
     url = f"{API_BASE.rstrip('/')}{endpoint}"
@@ -295,7 +276,7 @@ def _download_pdf_via_browser(endpoint: str, payload: dict, filename: str = "rep
               el.innerText = 'PDF 생성/다운로드 실패: ' + err;
               document.body.appendChild(el);
             }}
-          })();
+          }})();
         </script>
         """,
         height=0,
@@ -401,14 +382,31 @@ if ss.current_page == "Home":
     if isinstance(hc, dict):
         llm_ok = hc.get("llm_ok", True)
         db_ok = hc.get("db_ok", True)
+
         with status_cols[0]:
-            st.markdown(f'<div class="stat-card"><div class="stat-value"><span class="badge {"success" if llm_ok else "error"}' + '\">' + ("✓" if llm_ok else "✗") + '</span></div><div class="stat-label">🤖 LLM</div></div>', unsafe_allow_html=True)
+            llm_badge = "success" if llm_ok else "error"
+            llm_symbol = "✓" if llm_ok else "✗"
+            st.markdown(
+                f'<div class="stat-card"><div class="stat-value"><span class="badge {llm_badge}">{llm_symbol}</span></div><div class="stat-label">🤖 LLM</div></div>',
+                unsafe_allow_html=True
+            )
         with status_cols[1]:
-            st.markdown(f'<div class="stat-card"><div class="stat-value"><span class="badge {"success" if db_ok else "error"}' + '\">' + ("✓" if db_ok else "✗") + '</span></div><div class="stat-label">💾 DB</div></div>', unsafe_allow_html=True)
+            db_badge = "success" if db_ok else "error"
+            db_symbol = "✓" if db_ok else "✗"
+            st.markdown(
+                f'<div class="stat-card"><div class="stat-value"><span class="badge {db_badge}">{db_symbol}</span></div><div class="stat-label">💾 DB</div></div>',
+                unsafe_allow_html=True
+            )
         with status_cols[2]:
-            st.markdown(f'<div class="stat-card"><div class="stat-value">{len(_msgs())}</div><div class="stat-label">💬 메시지 수</div></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="stat-card"><div class="stat-value">{len(_msgs())}</div><div class="stat-label">💬 메시지 수</div></div>',
+                unsafe_allow_html=True
+            )
         with status_cols[3]:
-            st.markdown(f'<div class="stat-card"><div class="stat-value">{ss.insurer[:2]}</div><div class="stat-label">🏢 선택 보험사</div></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="stat-card"><div class="stat-value">{ss.insurer[:2]}</div><div class="stat-label">🏢 선택 보험사</div></div>',
+                unsafe_allow_html=True
+            )
 
 # Settings 페이지
 elif ss.current_page == "Settings":
@@ -459,6 +457,17 @@ elif ss.current_page == "Q&A":
     for m in _msgs():
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
+            # 저장된 refs가 있으면 펼침 표시
+            if m["role"] == "assistant" and m.get("refs"):
+                with st.expander("🔍 참조 문서 (Top-K)", expanded=False):
+                    for i, item in enumerate(m["refs"], 1):
+                        title = item.get("title") or "제목 없음"
+                        score = item.get("score")
+                        snippet = (item.get("snippet") or "").strip()
+                        if len(snippet) > 600:
+                            snippet = snippet[:600] + "…"
+                        meta_txt = f" _(score: {score:.4f})_" if isinstance(score, (int, float)) else ""
+                        st.markdown(f"**{i}. {title}**{meta_txt}\n\n> {snippet}")
 
     insurer_selected = bool(ss.insurer)
     default_query = ss.pop("example_query", "")
@@ -475,8 +484,8 @@ elif ss.current_page == "Q&A":
 
         with st.spinner("🔍 관련 문서를 검색하고 답변을 생성하고 있습니다..."):
             payload_ask = {
-                "query": user_text,           # 구버전 호환
-                "question": user_text,        # 신버전 백엔드 호환 (요청 반영)
+                "query": user_text,        # 구버전 호환
+                "question": user_text,     # 신버전 호환
                 "policy_type": ss.insurer,
                 "top_k": int(ss.top_k),
                 "max_tokens": int(ss.max_tokens),
@@ -566,4 +575,3 @@ elif ss.current_page == "PDF":
                 }
                 _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="answer.pdf")
                 st.success("✅ PDF 생성 요청이 완료되었습니다. 잠시 후 다운로드가 시작됩니다.")
-"}
