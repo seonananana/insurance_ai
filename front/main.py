@@ -599,7 +599,7 @@ if ss.current_page == "Home":
     hero_html = f"""
     <div class="hero-header">
         <h1 class="hero-title">🛡️ Insurance AI</h1>
-        <p class="hero-subtitle">AI 기반 보험 문서 검색 및 상담 시스템</p>
+        <p class="hero-subtitle">AI 기반 보험 문서 RAG 플랫폼</p>
     </div>
     """
     st.markdown(hero_html, unsafe_allow_html=True)
