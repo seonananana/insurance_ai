@@ -721,4 +721,147 @@ elif ss.current_page == "Q&A":
         examples = [
             "골절 치료비는 보험 청구가 가능한가요?",
             "입원 시 필요한 서류는 무엇인가요?",
-            "교통사고 보험 처리 절차를 알
+            "교통사고 보험 처리 절차를 알려주세요",
+            "암 진단 시 보장 범위는 어떻게 되나요?"
+        ]
+        for idx, example in enumerate(examples):
+            with example_cols[idx % 2]:
+                if st.button(f"📌 {example}", key=f"ex_{idx}", use_container_width=True):
+                    ss["example_query"] = example
+    
+    for m in _msgs():
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    insurer_selected = bool(ss.insurer)
+    default_query = ss.pop("example_query", "")
+    user_text = st.chat_input(
+        f"💬 {ss.insurer}에 대해 질문하세요...",
+        disabled=not insurer_selected,
+    ) or default_query
+
+    if user_text:
+        log = _msgs()
+        log.append({"role": "user", "content": user_text})
+        
+        with st.chat_message("user"):
+            st.markdown(user_text)
+
+        with st.spinner("🔍 관련 문서를 검색하고 답변을 생성하고 있습니다..."):
+            payload_ask = {
+                "query": user_text,
+                "policy_type": ss.insurer,
+                "top_k": int(ss.top_k),
+                "max_tokens": int(ss.max_tokens),
+                "temperature": float(ss.temperature),
+            }
+
+            r, err = _post(f"{API_BASE.rstrip('/')}/qa/ask", payload_ask, timeout=(20, 180))
+            if err or r is None:
+                error_msg = f"❌ 요청 실패: {err or 'no response'}"
+                log.append({"role": "assistant", "content": error_msg})
+                st.error(error_msg)
+                st.rerun()
+
+            data = r.json()
+            answer = data.get("answer") or "⚠️ 빈 응답입니다."
+            refs = _normalize_references(data)
+
+            render_answer_card(answer, refs)
+            log.append({"role": "assistant", "content": answer})
+
+            if ss.auto_pdf:
+                detect_metas = [s["title"] for s in refs][: ss.top_k] if refs else []
+                pdf_payload = {
+                    "question": user_text,
+                    "policy_type": ss.insurer,
+                    "top_k": int(ss.top_k),
+                    "max_tokens": int(ss.max_tokens),
+                    "temperature": float(ss.temperature),
+                    "detect_metas": detect_metas,
+                }
+                _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="insurance_report.pdf")
+                st.success("✅ PDF 리포트가 자동으로 다운로드되었습니다.")
+
+# ─────────────────────────────────────────────────────────────
+# PDF 리포트 페이지
+# ─────────────────────────────────────────────────────────────
+elif ss.current_page == "PDF":
+    insurer_info = INSURERS[ss.insurer]
+    hero_html = f"""
+    <div class="hero-header">
+        <h1 class="hero-title">📄 {ss.insurer} PDF 리포트 생성</h1>
+        <p class="hero-subtitle">상세한 보험 청구 리포트를 PDF 형식으로 생성하세요</p>
+    </div>
+    """
+    st.markdown(hero_html, unsafe_allow_html=True)
+    st.markdown("### 📋 상세 리포트 생성")
+    st.info("💡 아래 폼을 작성하여 상세한 보험 청구 리포트 PDF를 생성할 수 있습니다.")
+
+    with st.form("pdf_form"):
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            title = st.text_input("📌 제목", value="보험 청구 상담 결과", placeholder="리포트 제목을 입력하세요")
+            summary = st.text_area("📝 사건 요약", placeholder="사고/발병 경위, 증상, 치료 정보 등을 입력하세요", height=150)
+        
+        with col2:
+            likelihood = st.text_input("📊 청구 가능성", placeholder="예: 높음, 중간, 낮음")
+            qr_url = st.text_input("🔗 QR 코드 URL (선택)", placeholder="https://example.com")
+
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            required_docs = st.text_area(
+                "📋 필요 서류", 
+                value="진단서\n진료비 영수증\n입퇴원확인서",
+                height=120
+            )
+        
+        with col4:
+            timeline = st.text_area(
+                "📅 타임라인",
+                placeholder="2025-01-02 최초 내원\n2025-01-05 입원\n2025-01-10 퇴원",
+                height=120
+            )
+
+        meta = st.text_input("ℹ️ 메타 정보 (선택)", value=f"모델: gpt-4o-mini / Top-K: {ss.top_k}")
+        appendix = st.text_area("📎 부록 (선택)", placeholder="추가 정보를 입력하세요", height=100)
+
+        submitted = st.form_submit_button("📄 PDF 생성 및 다운로드", use_container_width=True)
+        
+        if submitted:
+            parts = []
+            if title:
+                parts.append(f"[제목] {title}")
+            if summary:
+                parts.append(f"[사건요약] {summary}")
+            if likelihood:
+                parts.append(f"[청구가능성] {likelihood}")
+            if timeline:
+                steps = ", ".join([s.strip() for s in timeline.splitlines() if s.strip()])
+                parts.append(f"[타임라인] {steps}")
+            if required_docs:
+                docs = ", ".join([d.strip() for d in required_docs.splitlines() if d.strip()])
+                parts.append(f"[필요서류] {docs}")
+            if meta:
+                parts.append(f"[메타] {meta}")
+            if appendix:
+                parts.append(f"[부록] {appendix}")
+            if qr_url:
+                parts.append(f"[QR] {qr_url}")
+            
+            question_text = "\n".join(parts)
+            
+            if not question_text.strip():
+                st.error("폼에 최소 한 개 항목 이상 입력하세요.")
+            else:
+                pdf_payload = {
+                    "question": question_text,
+                    "policy_type": ss.insurer,
+                    "top_k": int(ss.top_k),
+                    "max_tokens": int(ss.max_tokens),
+                    "temperature": float(ss.temperature),
+                }
+                _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="answer.pdf")
+                st.success("✅ PDF 생성 요청이 완료되었습니다. 잠시 후 다운로드가 시작됩니다.")
