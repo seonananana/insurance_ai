@@ -127,29 +127,6 @@ section[data-testid="stSidebar"] > div {
     z-index: 1;
 }
 
-/* 보험사 선택 카드 */
-.insurer-card {
-    background: white;
-    border: 2px solid var(--border-light);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    transition: all 0.3s ease;
-    cursor: pointer;
-}
-
-.insurer-card:hover {
-    border-color: var(--primary-blue);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-}
-
-.insurer-card.selected {
-    border-color: var(--primary-blue);
-    background: linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%);
-    box-shadow: var(--shadow-md);
-}
-
 /* 채팅 메시지 개선 */
 div[data-testid="stChatMessage"] {
     border: none;
@@ -163,16 +140,6 @@ div[data-testid="stChatMessage"] {
 
 div[data-testid="stChatMessage"]:hover {
     box-shadow: var(--shadow-md);
-}
-
-div[data-testid="stChatMessage"][data-testid*="user"] {
-    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
-    border-left: 4px solid var(--primary-blue);
-}
-
-div[data-testid="stChatMessage"][data-testid*="assistant"] {
-    background: white;
-    border-left: 4px solid #10B981;
 }
 
 /* 참조 문서 카드 */
@@ -308,28 +275,6 @@ div[data-testid="stChatMessage"][data-testid*="assistant"] {
     box-shadow: var(--shadow-sm);
 }
 
-/* 슬라이더 스타일링 */
-.stSlider {
-    padding: 1rem 0;
-}
-
-/* 토글 스위치 개선 */
-.stCheckbox {
-    padding: 0.5rem 0;
-}
-
-/* 로딩 애니메이션 */
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.loading-text {
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    color: var(--primary-blue);
-    font-weight: 600;
-}
-
 /* 뱃지 스타일 */
 .badge {
     display: inline-block;
@@ -400,7 +345,8 @@ def render_answer_card(answer: str, sources: list[dict] | None = None):
     with st.chat_message("assistant"):
         st.markdown(answer)
         if sources:
-            with st.expander(f"🔍 **참조 문서 {len(sources)}개** - 클릭하여 자세히 보기", expanded=True):
+            expander_title = f"🔍 **참조 문서 {len(sources)}개** - 클릭하여 자세히 보기"
+            with st.expander(expander_title, expanded=True):
                 for i, item in enumerate(sources, 1):
                     title = item.get("title") or "제목 없음"
                     score = item.get("score")
@@ -413,12 +359,13 @@ def render_answer_card(answer: str, sources: list[dict] | None = None):
                         score_pct = int(score * 100)
                         score_badge = f'<span class="reference-score">{score_pct}% 관련</span>'
                     
-                    st.markdown(f"""
+                    ref_html = f"""
                     <div class="reference-card">
                         <div class="reference-title">📄 {i}. {title}{score_badge}</div>
                         <div class="reference-snippet">{snippet}</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    st.markdown(ref_html, unsafe_allow_html=True)
 
 def _download_pdf_via_browser(endpoint: str, payload: dict, filename: str = "report.pdf"):
     url = f"{API_BASE.rstrip('/')}{endpoint}"
@@ -485,7 +432,6 @@ def _download_pdf_via_browser(endpoint: str, payload: dict, filename: str = "rep
 with st.sidebar:
     st.markdown("### 🏥 보험사 선택")
     
-    # 보험사 선택을 버튼 형태로 개선
     for name, info in INSURERS.items():
         is_selected = (ss.insurer == name)
         if st.button(
@@ -501,7 +447,6 @@ with st.sidebar:
     
     st.divider()
     
-    # 고급 설정 토글
     with st.expander("⚙️ 고급 설정", expanded=ss.show_settings):
         st.markdown("**검색 설정**")
         st.slider("📊 Top-K (근거 개수)", 1, 10, key="top_k")
@@ -514,10 +459,10 @@ with st.sidebar:
     
     st.divider()
     
-    # 대화 관리
     st.markdown("### 💬 대화 관리")
     msg_count = len(_msgs())
-    st.markdown(f'<div class="stat-card"><div class="stat-value">{msg_count}</div><div class="stat-label">메시지 수</div></div>', unsafe_allow_html=True)
+    stat_html = f'<div class="stat-card"><div class="stat-value">{msg_count}</div><div class="stat-label">메시지 수</div></div>'
+    st.markdown(stat_html, unsafe_allow_html=True)
     
     if st.button("🗑️ 대화 기록 삭제", use_container_width=True):
         ss["messages_by_insurer"][ss["insurer"]] = []
@@ -525,7 +470,6 @@ with st.sidebar:
     
     st.divider()
     
-    # 시스템 상태
     st.markdown("### 🔌 시스템 상태")
     hc = _get(f"{API_BASE.rstrip('/')}/health/")
     if isinstance(hc, dict):
@@ -537,12 +481,13 @@ with st.sidebar:
         llm_text = "정상" if llm_ok else "오류"
         db_text = "정상" if db_ok else "오류"
         
-        st.markdown(f"""
+        status_html = f"""
         <div style="display: flex; gap: 0.5rem; flex-direction: column;">
             <div><span class="badge {llm_badge}">🤖 LLM: {llm_text}</span></div>
             <div><span class="badge {db_badge}">💾 DB: {db_text}</span></div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+        st.markdown(status_html, unsafe_allow_html=True)
     
     st.caption(f"🔗 API: {API_BASE}")
 
@@ -550,24 +495,23 @@ with st.sidebar:
 # 메인 헤더
 # ─────────────────────────────────────────────────────────────
 insurer_info = INSURERS[ss.insurer]
-st.markdown(f"""
+hero_html = f"""
 <div class="hero-header">
     <h1 class="hero-title">{insurer_info['icon']} {ss.insurer} 보험 상담</h1>
     <p class="hero-subtitle">AI 기반 보험 문서 검색 및 상담 시스템</p>
 </div>
-""", unsafe_allow_html=True)
+"""
+st.markdown(hero_html, unsafe_allow_html=True)
 
-tab_qna, tab_pdf, tab_stats = st.tabs(["💬 Q&A 상담", "📄 PDF 리포트", "📊 통계"])
+tab_qna, tab_pdf = st.tabs(["💬 Q&A 상담", "📄 PDF 리포트"])
 
 # ─────────────────────────────────────────────────────────────
 # 💬 Q&A 탭
 # ─────────────────────────────────────────────────────────────
 with tab_qna:
-    # 빈 대화일 때 안내 메시지
     if len(_msgs()) == 0:
         st.info("💡 질문을 입력하여 보험 상담을 시작하세요. AI가 관련 문서를 검색하여 답변해드립니다.")
         
-        # 예시 질문 제공
         st.markdown("#### 💭 예시 질문")
         example_cols = st.columns(2)
         examples = [
@@ -581,12 +525,10 @@ with tab_qna:
                 if st.button(f"📌 {example}", key=f"ex_{idx}", use_container_width=True):
                     ss["example_query"] = example
     
-    # 대화 기록 표시
     for m in _msgs():
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
-    # 사용자 입력
     insurer_selected = bool(ss.insurer)
     default_query = ss.pop("example_query", "")
     user_text = st.chat_input(
@@ -678,5 +620,36 @@ with tab_pdf:
         
         if submitted:
             parts = []
-            if title: parts.append(f"[제목] {title}")
-            if summary: parts.append(f"[사건요
+            if title:
+                parts.append(f"[제목] {title}")
+            if summary:
+                parts.append(f"[사건요약] {summary}")
+            if likelihood:
+                parts.append(f"[청구가능성] {likelihood}")
+            if timeline:
+                steps = ", ".join([s.strip() for s in timeline.splitlines() if s.strip()])
+                parts.append(f"[타임라인] {steps}")
+            if required_docs:
+                docs = ", ".join([d.strip() for d in required_docs.splitlines() if d.strip()])
+                parts.append(f"[필요서류] {docs}")
+            if meta:
+                parts.append(f"[메타] {meta}")
+            if appendix:
+                parts.append(f"[부록] {appendix}")
+            if qr_url:
+                parts.append(f"[QR] {qr_url}")
+            
+            question_text = "\n".join(parts)
+            
+            if not question_text.strip():
+                st.error("폼에 최소 한 개 항목 이상 입력하세요.")
+            else:
+                pdf_payload = {
+                    "question": question_text,
+                    "policy_type": ss.insurer,
+                    "top_k": int(ss.top_k),
+                    "max_tokens": int(ss.max_tokens),
+                    "temperature": float(ss.temperature),
+                }
+                _download_pdf_via_browser("/qa/answer_pdf", pdf_payload, filename="answer.pdf")
+                st.success("✅ PDF 생성 요청이 완료되었습니다. 잠시 후 다운로드가 시작됩니다.")
