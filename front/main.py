@@ -47,7 +47,6 @@ def inject_css(css: str):
 
 inject_css("""
 :root{ --page-max: 1100px; --page-pad: 16px; }
-#MainMenu, header, footer {display:none !important;}
 section[data-testid="stSidebar"], div[data-testid="stSidebar"] {
   visibility:visible !important; opacity:1 !important; transform:none !important;
   display:flex !important; width:320px !important;
